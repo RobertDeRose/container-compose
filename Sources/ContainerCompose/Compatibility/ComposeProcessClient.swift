@@ -7,6 +7,7 @@ import ComposeSupport
 import ContainerAPIClient
 import ContainerResource
 import ContainerXPC
+import Containerization
 import ContainerizationError
 import ContainerizationOS
 import Darwin
@@ -18,6 +19,19 @@ struct ComposeProcessClient: Sendable {
     private let connection = ComposeXPCConnection()
 
     init() {}
+
+    static func killRequest(containerID: String, processID: String, signal: Int32) throws -> XPCMessage {
+        // Keep the unmodified host's string wire contract and translate by name,
+        // not by Darwin's signal numbers, which differ from Linux's.
+        guard let name = Signal.platformName(signal), Signal.linux[name] != nil else {
+            throw ContainerizationError(.invalidArgument, message: "unsupported host signal: \(signal)")
+        }
+        let request = XPCMessage(route: XPCRoute.containerKill.rawValue)
+        request.set(key: XPCKeys.id.rawValue, value: containerID)
+        request.set(key: XPCKeys.processIdentifier.rawValue, value: processID)
+        request.set(key: XPCKeys.signal.rawValue, value: "SIG\(name)")
+        return request
+    }
 
     func createProcess(
         containerId: String,
@@ -65,9 +79,8 @@ private struct ComposeRemoteProcess: ClientProcess {
     }
 
     func kill(_ signal: Int32) async throws {
-        let message = request(.containerKill)
-        message.set(key: XPCKeys.signal.rawValue, value: Int64(signal))
-        try await connection.send(message)
+        let message = try ComposeProcessClient.killRequest(containerID: containerID, processID: id, signal: signal)
+        try await connection.send(message, timeout: .seconds(5))
     }
 
     func resize(_ size: Terminal.Size) async throws {
