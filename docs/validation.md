@@ -72,3 +72,27 @@ machine. Record `container system status --format json`, including server commit
 The included workflow runs the macOS build/unit tests and Linux portable tests.
 It does not run VM integration on hosted runners or publish a release. A successful
 workflow must not be represented as completion of the integration checklist above.
+
+## Signal and termination regressions
+
+The compatibility client sends canonical signal names using the unmodified host
+service's string wire format. Unsupported host-only signals are rejected before
+sending. Each kill reply has a five-second deadline.
+
+`ProcessCancellationController` owns and joins one termination task. A bounded
+SIGTERM attempt is followed by a two-second grace interval and, without confirmed
+exit, a bounded SIGKILL attempt. Confirmed remote exit cancels pending reply waits
+as well as the grace timer. Cancelling the local process wait is not evidence of
+remote exit. Timeouts stop waiting for a reply; they do not revoke an XPC request
+already sent to the service. Delivery failures are logged.
+
+Run the new macOS unit coverage with:
+
+```bash
+swift test --filter 'ComposeProcessSignalTests|ProcessTerminationTests|ProcessCancellationTests'
+```
+
+The tests include withheld acknowledgements, late replies, cancellation of either
+pending signal after confirmed exit, ordering of the grace interval, repeated
+cancellation, and joining cleanup before returning from process I/O. Linux's
+normal package tests do not compile or run these macOS-specific tests.

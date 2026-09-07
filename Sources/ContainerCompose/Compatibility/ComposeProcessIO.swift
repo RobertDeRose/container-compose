@@ -22,46 +22,6 @@ import Darwin
 import Foundation
 import Logging
 
-final class ProcessCancellationController: @unchecked Sendable {
-    private let process: any ClientProcess
-    private let gracePeriod: Duration
-    private let lock = NSLock()
-    private var terminationStarted = false
-    private var exited = false
-    private var escalation: Task<Void, Never>?
-
-    init(process: any ClientProcess, gracePeriod: Duration = .seconds(2)) {
-        self.process = process
-        self.gracePeriod = gracePeriod
-    }
-
-    func cancel() {
-        lock.withLock {
-            guard !terminationStarted, !exited else { return }
-            terminationStarted = true
-            Task {
-                try? await process.kill(SIGTERM)
-            }
-            escalation = Task {
-                do { try await Task.sleep(for: gracePeriod) } catch { return }
-                guard !Task.isCancelled, lock.withLock({ !exited }) else { return }
-                try? await process.kill(SIGKILL)
-            }
-        }
-    }
-    // Only a successful wait confirms remote exit. Cancelling the local wait
-    // does not prove that the guest process stopped, so escalation must remain
-    // armed until exit is observed or SIGKILL has been attempted.
-    func processExited() {
-        lock.withLock {
-            exited = true
-            escalation?.cancel()
-            escalation = nil
-        }
-    }
-
-}
-
 struct ComposeProcessIO: Sendable {
     let stdin: Pipe?
     let stdout: Pipe?
@@ -202,48 +162,69 @@ struct ComposeProcessIO: Sendable {
     func handleProcess(process: ClientProcess, log: Logger) async throws -> Int32 {
         let signals = AsyncSignalHandler.create(notify: Self.signalSet)
         let signalStream = signals.signals
-        let cancellation = ProcessCancellationController(process: process)
+        let cancellation = ProcessCancellationController(process: process, log: log)
         defer { signals.cancel() }
-        return try await withTaskCancellationHandler(
-            operation: {
-                try await withThrowingTaskGroup(of: Int32?.self, returning: Int32.self) { group in
-                    try Task.checkCancellation()
-                    try await process.start()
-                    try Task.checkCancellation()
-                    try closeAfterStart()
+        do {
+            let status = try await withTaskCancellationHandler(
+                operation: {
+                    try await withThrowingTaskGroup(of: Int32?.self, returning: Int32.self) { group in
+                        try Task.checkCancellation()
+                        try await process.start()
+                        try Task.checkCancellation()
+                        try closeAfterStart()
 
-                    let waitAdded = group.addTaskUnlessCancelled {
-                        let code = try await process.wait()
-                        cancellation.processExited()
-                        try await wait()
-                        return code
-                    }
+                        let waitAdded = group.addTaskUnlessCancelled {
+                            let code = try await process.wait()
+                            cancellation.processExited()
+                            try await wait()
+                            return code
+                        }
 
-                    guard waitAdded else {
-                        group.cancelAll()
-                        return -1
-                    }
+                        guard waitAdded else {
+                            group.cancelAll()
+                            return -1
+                        }
 
-                    if let current = console {
-                        let size = try current.size
-                        // It's supremely possible the process could've exited already. We shouldn't treat
-                        // this as fatal.
-                        try? await process.resize(size)
-                        _ = group.addTaskUnlessCancelled {
-                            for await sig in signalStream {
-                                switch sig {
-                                case SIGWINCH:
-                                    do {
-                                        try await process.resize(try current.size)
-                                    } catch {
-                                        log.error(
-                                            "failed to send terminal resize event",
-                                            metadata: [
-                                                "error": "\(error)"
-                                            ]
-                                        )
+                        if let current = console {
+                            let size = try current.size
+                            // It's supremely possible the process could've exited already. We shouldn't treat
+                            // this as fatal.
+                            try? await process.resize(size)
+                            _ = group.addTaskUnlessCancelled {
+                                for await sig in signalStream {
+                                    switch sig {
+                                    case SIGWINCH:
+                                        do {
+                                            try await process.resize(try current.size)
+                                        } catch {
+                                            log.error(
+                                                "failed to send terminal resize event",
+                                                metadata: [
+                                                    "error": "\(error)"
+                                                ]
+                                            )
+                                        }
+                                    case SIGINT, SIGTERM, SIGUSR1, SIGUSR2:
+                                        do {
+                                            try await process.kill(sig)
+                                        } catch {
+                                            log.error(
+                                                "failed to send signal",
+                                                metadata: [
+                                                    "signal": "\(sig)",
+                                                    "error": "\(error)",
+                                                ]
+                                            )
+                                        }
+                                    default:
+                                        continue
                                     }
-                                case SIGINT, SIGTERM, SIGUSR1, SIGUSR2:
+                                }
+                                return nil
+                            }
+                        } else {
+                            _ = group.addTaskUnlessCancelled {
+                                for await sig in signalStream {
                                     do {
                                         try await process.kill(sig)
                                     } catch {
@@ -255,48 +236,34 @@ struct ComposeProcessIO: Sendable {
                                             ]
                                         )
                                     }
-                                default:
-                                    continue
                                 }
+                                return nil
                             }
-                            return nil
                         }
-                    } else {
-                        _ = group.addTaskUnlessCancelled {
-                            for await sig in signalStream {
-                                do {
-                                    try await process.kill(sig)
-                                } catch {
-                                    log.error(
-                                        "failed to send signal",
-                                        metadata: [
-                                            "signal": "\(sig)",
-                                            "error": "\(error)",
-                                        ]
-                                    )
-                                }
-                            }
-                            return nil
-                        }
-                    }
 
-                    while true {
-                        let result = try await group.next()
-                        if result == nil {
-                            return -1
+                        while true {
+                            let result = try await group.next()
+                            if result == nil {
+                                return -1
+                            }
+                            let status = result!
+                            if let status {
+                                group.cancelAll()
+                                return status
+                            }
                         }
-                        let status = result!
-                        if let status {
-                            group.cancelAll()
-                            return status
-                        }
+                        return -1
                     }
-                    return -1
-                }
-            },
-            onCancel: {
-                cancellation.cancel()
-            })
+                },
+                onCancel: {
+                    cancellation.cancel()
+                })
+            await cancellation.waitForCompletion()
+            return status
+        } catch {
+            await cancellation.waitForCompletion()
+            throw error
+        }
     }
 
     func closeAfterStart() throws {
