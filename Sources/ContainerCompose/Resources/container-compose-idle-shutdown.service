@@ -1,0 +1,20 @@
+# Copyright © 2026 Robert DeRose and the container-compose contributors.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Automatically stop the Compose machine after its nested Docker daemon has
+# been idle. The machine filesystem remains persistent across the poweroff.
+
+[Unit]
+Description=Power off the Compose machine after Docker is idle
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/container/compose-idle-shutdown.env
+ExecStart=/usr/local/bin/container-compose-idle-shutdown
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

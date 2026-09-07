@@ -1,0 +1,2 @@
+abstract = "Run Docker Compose inside a persistent container machine"
+author = "Robert DeRose"

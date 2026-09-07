@@ -1,0 +1,66 @@
+// Copyright © 2026 Robert DeRose and the container-compose contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import ContainerizationError
+import Darwin
+import Foundation
+
+/// Serializes first-use Compose machine initialization across plugin processes.
+final class ComposeMachineInitializationLock: @unchecked Sendable {
+    private let descriptor: Int32
+    private let stateLock = NSLock()
+    private var isReleased = false
+
+    private init(descriptor: Int32) {
+        self.descriptor = descriptor
+    }
+
+    deinit {
+        _ = close(descriptor)
+    }
+
+    static func acquire(
+        appRoot: URL,
+        retryInterval: Duration = .milliseconds(100)
+    ) async throws -> ComposeMachineInitializationLock {
+        let directory = appRoot.appendingPathComponent("plugin-state/compose", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let path = directory.appendingPathComponent("compose-machine-init.lock")
+        let descriptor = open(path.path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
+        guard descriptor >= 0 else {
+            throw ContainerizationError(
+                .internalError,
+                message: "failed to open Compose machine initialization lock: \(String(cString: strerror(errno)))"
+            )
+        }
+
+        let lock = ComposeMachineInitializationLock(descriptor: descriptor)
+        do {
+            while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+                guard errno == EWOULDBLOCK || errno == EAGAIN else {
+                    throw ContainerizationError(
+                        .internalError,
+                        message: "failed to acquire Compose machine initialization lock: \(String(cString: strerror(errno)))"
+                    )
+                }
+                do {
+                    try await Task.sleep(for: retryInterval)
+                } catch is CancellationError {
+                    throw CancellationError()
+                }
+            }
+        } catch {
+            lock.release()
+            throw error
+        }
+        return lock
+    }
+
+    func release() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard !isReleased else { return }
+        isReleased = true
+        _ = flock(descriptor, LOCK_UN)
+    }
+}
