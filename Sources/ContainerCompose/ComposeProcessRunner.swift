@@ -65,7 +65,14 @@ struct ComposeProcessRunner: Sendable {
         let tty = isatty(STDIN_FILENO) == 1 && isatty(STDOUT_FILENO) == 1
         // Compose must receive piped stdin for commands such as `exec -T` and
         // `-f -`, even when the host stdin is not a TTY.
-        let io = try ComposeProcessIO.create(tty: tty, interactive: true, detach: false)
+        // Help is still streamed; only stdout of an exact Compose help request
+        // is rewritten so it names the host command.
+        let io = try ComposeProcessIO.create(
+            tty: tty,
+            interactive: true,
+            detach: false,
+            stdoutRewriter: ComposeHelpOutput.isHelpRequest(arguments) ? ComposeHelpOutput.Rewriter() : nil
+        )
         defer {
             try? io.close()
         }
