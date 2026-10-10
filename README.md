@@ -102,7 +102,9 @@ forwarding are deliberately not reused.
 Arguments become opaque after forwarding starts. A guest program's `--help`,
 `-h`, `--socket-path`, or `--completions` is not interpreted by this wrapper.
 `container compose --help` shows plugin help; `container compose up --help`
-executes Compose help inside the machine. `--completions bash`, `zsh`, and `fish`
+executes Compose help inside the machine and rewrites `docker compose` to
+`container compose` in its standard output. Only the exact forms `help`,
+`help <subcommand>`, and `<subcommand> --help|-h` are rewritten. `--completions bash`, `zsh`, and `fish`
 produce static completion scripts without booting a VM.
 
 Docker images, named volumes, networks, and build cache remain in the persistent

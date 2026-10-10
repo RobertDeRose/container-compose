@@ -46,7 +46,12 @@ struct ComposeProcessIO: Sendable {
 
     let console: Terminal?
 
-    static func create(tty: Bool, interactive: Bool, detach: Bool) throws -> ComposeProcessIO {
+    static func create(
+        tty: Bool,
+        interactive: Bool,
+        detach: Bool,
+        stdoutRewriter: ComposeHelpOutput.Rewriter? = nil
+    ) throws -> ComposeProcessIO {
         let current: Terminal? = try {
             if !tty || !interactive {
                 return nil
@@ -105,11 +110,21 @@ struct ComposeProcessIO: Sendable {
                 let data = handle.availableData
                 if data.isEmpty {
                     rout.readabilityHandler = nil
+                    if let remainder = stdoutRewriter?.finish(), !remainder.isEmpty {
+                        try? pout.write(contentsOf: remainder)
+                    }
                     cc.yield()
                     return
                 }
                 do {
-                    try pout.write(contentsOf: data)
+                    if let stdoutRewriter {
+                        let rewritten = stdoutRewriter.process(data)
+                        if !rewritten.isEmpty {
+                            try pout.write(contentsOf: rewritten)
+                        }
+                    } else {
+                        try pout.write(contentsOf: data)
+                    }
                 } catch {
                     rout.readabilityHandler = nil
                     cc.yield()
