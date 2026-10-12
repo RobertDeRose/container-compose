@@ -171,15 +171,71 @@ running but otherwise idle application container keeps the machine running.
 
 ## Networking and host Docker clients
 
-Published ports are reachable through the machine's address, not automatically
-through macOS `localhost`. The ordinary `compose.machine` hostname can use the
-host's existing `machine` DNS domain configuration. The plugin neither installs
-DNS configuration nor adds wildcard project aliases.
+TCP ports that containers publish are also forwarded to macOS `localhost`
+(`127.0.0.1` and `::1`), as Docker Desktop does, while the Docker socket
+forwarder described below is running. `container compose` starts it, and so does
+`--socket-path`. Ports bound to the machine's loopback, such as
+`127.0.0.1:4000:4000`, are forwarded too. Forwarding begins within a few
+seconds of a container starting and stops when the port disappears or the
+machine stops.
 
-**Host Docker socket access is not implemented in this extraction.** Docker
-Compose executes inside the machine and does not need a host Unix socket.
-A leading `--socket-path` produces a clear unsupported-feature error; it does not
-pretend that an endpoint exists. No unauthenticated TCP Docker listener is added.
+- Ports are mirrored only on loopback, never onto your LAN. macOS lets a normal
+  user bind ports below 1024 only on all interfaces, so for those ports the
+  forwarder binds all interfaces and closes connections that do not come from
+  this Mac.
+- A port that another program on the Mac already listens on, at `localhost` or
+  on all interfaces, is skipped, so `localhost` traffic never splits between
+  two programs. For example, AirPlay Receiver holds `*:5000` and `*:7000`. The
+  skip is logged once and retried every 30 seconds, so forwarding starts when
+  the port is freed.
+- UDP is not forwarded.
+- Discovery reads the guest's `docker-proxy` processes. It does not work if the
+  Docker userland proxy is disabled.
+- Each connection is relayed by `socat` inside the machine to the address the
+  port was published on, over the same process channel as
+  `container machine run`, so it works even when the Mac cannot reach the
+  machine's network address.
+
+Published ports remain reachable through the machine's address as well. The
+ordinary `compose.machine` hostname can use the host's existing `machine` DNS
+domain configuration. The plugin neither installs DNS configuration nor adds
+wildcard project aliases.
+
+### Host Docker socket
+
+Host Docker clients (the `docker` CLI, IDEs, Testcontainers) can use the
+machine's daemon through a Unix socket in your home directory:
+
+```bash
+# ~/.zshrc
+export DOCKER_HOST="$(container compose --socket-path)"
+```
+
+`--socket-path` prints `unix://$HOME/.local/run/docker.socket`. If no forwarder
+from the installed plugin is listening there, it first starts one in the
+background. It does not contact the container services or boot the machine, so
+it is cheap enough for a shell profile. A forwarder started by a different
+plugin build is replaced, which is how upgrades take effect.
+
+The forwarder boots the `compose` machine on the first Docker request, so idle
+shutdown still applies. Each connection is relayed to
+`docker system dial-stdio` inside the machine. If the machine cannot be
+prepared, clients receive a Docker API error that explains why. The socket is
+mode `0600`, and no TCP listener is added.
+
+When a forwarder is replaced or sent SIGTERM, it releases the socket at once
+and exits after its open connections finish, so a running `logs -f` or
+`compose up` is not cut off. A second signal stops it immediately.
+
+The forwarder logs to `~/Library/Logs/container-compose/docker-socket.log`.
+To stop it, run:
+
+```bash
+kill "$(head -1 ~/.local/run/docker.socket.lock)"
+```
+
+Paths sent by host clients are resolved inside the machine. Bind mounts work
+for paths under your home directory, which the machine mounts at the same path.
 
 For direct Docker administration, use the native guest execution interface:
 

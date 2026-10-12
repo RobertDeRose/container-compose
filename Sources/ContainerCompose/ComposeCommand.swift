@@ -13,7 +13,7 @@ public struct ComposeCommand: AsyncParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "compose",
         abstract: "Run Docker Compose inside a persistent container machine",
-        usage: "container compose [--completions <bash|zsh|fish> | --install-path | <subcommand> ...]",
+        usage: "container compose [--completions <bash|zsh|fish> | --install-path | --socket-path | <subcommand> ...]",
         discussion: """
             Compose arguments are forwarded to the Docker Compose CLI inside the
             shared machine. The machine remains running after `compose down`.
@@ -24,6 +24,7 @@ public struct ComposeCommand: AsyncParsableCommand {
               container compose exec api sh
               container compose version
               container machine stop compose
+              export DOCKER_HOST="$(container compose --socket-path)"
             """,
         version: ComposeVersion.current
     )
@@ -38,8 +39,15 @@ public struct ComposeCommand: AsyncParsableCommand {
     )
     var completions: ComposeCompletionShell? = nil
 
-    @Flag(name: .long, help: "Unsupported: this plugin does not publish a host Docker socket")
+    @Flag(
+        name: .long,
+        help: "Print the host Docker endpoint, starting its forwarder if needed; cannot be combined with --completions or Compose arguments"
+    )
     var socketPath = false
+
+    // Started by --socket-path; runs the forwarder in the foreground.
+    @Flag(name: .customLong("serve-socket"), help: .hidden)
+    var serveSocket = false
 
     @Flag(name: .long, help: "Print the external plugin installation directory for the running container host")
     var installPath = false
@@ -58,7 +66,18 @@ public struct ComposeCommand: AsyncParsableCommand {
         try await run(compose: Self.runCompose)
     }
 
-    func run(compose: ([String]) async throws -> Int32) async throws {
+    func run(
+        compose: ([String]) async throws -> Int32,
+        publishSocket: () throws -> String = Self.publishSocket,
+        serveSocket serve: () async throws -> Void = { try await ComposeForwarderService.serve() }
+    ) async throws {
+        if serveSocket {
+            guard completions == nil, !socketPath, !installPath, arguments.isEmpty else {
+                throw ValidationError("--serve-socket cannot be combined with other options or Compose arguments")
+            }
+            try await serve()
+            return
+        }
         if installPath {
             guard completions == nil, !socketPath, arguments.isEmpty else {
                 throw ValidationError("--install-path cannot be combined with other options or Compose arguments")
@@ -79,18 +98,33 @@ public struct ComposeCommand: AsyncParsableCommand {
             guard arguments.isEmpty else {
                 throw ValidationError("--socket-path cannot be combined with Compose arguments")
             }
-            throw ValidationError("Host Docker socket access is not supported by this external plugin; Compose runs inside the machine")
+            print(try publishSocket())
+            return
         }
 
         throw ArgumentParser.ExitCode(try await compose(arguments))
     }
 
+    /// Returns the Docker endpoint after starting its forwarder. The endpoint
+    /// is printed even when the forwarder fails, so a shell profile still
+    /// exports it and a later `--socket-path` can repair the forwarder.
+    private static func publishSocket() throws -> String {
+        let endpoint = ComposeSocketEndpoint()
+        do {
+            try ComposeSocketLauncher.ensureRunning(endpoint: endpoint)
+        } catch {
+            print(endpoint.dockerHost)
+            throw error
+        }
+        return endpoint.dockerHost
+    }
+
     private static func runCompose(arguments: [String]) async throws -> Int32 {
         LoggingSystem.bootstrap { label in StreamLogHandler.standardError(label: label) }
         let log = Logger(label: "container.compose")
-        let processRunner = ComposeProcessRunner()
-        let manager = ComposeMachineManager(processRunner: processRunner)
-        let snapshot = try await manager.ensureReady(log: log)
+        // The user command's guest context is settled here, once, before the
+        // machine is touched: a directory outside the home mount fails
+        // without booting anything, and machine readiness never depends on it.
         let homeDirectory = FilePath(FileManager.default.homeDirectoryForCurrentUser.path)
         let currentDirectory = FilePath(FileManager.default.currentDirectoryPath)
         let workingDirectory = try ComposeEnvironment.workingDirectory(
@@ -102,6 +136,18 @@ public struct ComposeCommand: AsyncParsableCommand {
             homeDirectory: homeDirectory,
             workingDirectory: currentDirectory
         )
+        // The forwarder also mirrors published ports onto localhost, so start
+        // it for Compose users who never export DOCKER_HOST.
+        do {
+            try ComposeSocketLauncher.ensureRunning()
+        } catch {
+            log.warning("Docker socket forwarder is unavailable; published ports stay on the machine address", metadata: ["error": "\(error)"])
+        }
+        let processRunner = ComposeProcessRunner()
+        let manager = ComposeMachineManager(processRunner: processRunner)
+        let snapshot = try await manager.ensureReady(log: log)
+        // The machine may have just booted; let the forwarder watch its ports.
+        ComposeSocketEndpoint().notifyForwarder()
         return try await processRunner.run(
             snapshot: snapshot,
             arguments: arguments,

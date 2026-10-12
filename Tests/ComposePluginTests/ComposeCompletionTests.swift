@@ -34,6 +34,8 @@ struct ComposeCompletionTests {
 
         #expect(ComposeCompletionProvider.pluginOptions.contains("--install-path"))
         #expect(ComposeCompletionProvider.pluginOptions.contains("--completions"))
+        #expect(ComposeCompletionProvider.pluginOptions.contains("--socket-path"))
+        #expect(!ComposeCompletionProvider.pluginOptions.contains("--serve-socket"))
         #expect(!ComposeCompletionProvider.composeOptions.contains("--install-path"))
         #expect(!ComposeCompletionProvider.composeOptions.contains("--completions"))
         #expect(script.components(separatedBy: ComposeCompletionProvider.pluginOptions).count == 2)

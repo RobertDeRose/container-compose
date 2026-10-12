@@ -23,6 +23,7 @@ struct ComposeCommandTests {
         ["up", "--help"],
         ["config", "-h"],
         ["up", "--socket-path"],
+        ["up", "--serve-socket"],
         ["up", "--completions=bash"],
     ])
     func capturedArgumentsRemainOpaque(arguments: [String]) async throws {
@@ -30,6 +31,7 @@ struct ComposeCommandTests {
 
         #expect(command.arguments == arguments)
         #expect(!command.socketPath)
+        #expect(!command.serveSocket)
         #expect(command.completions == nil)
 
         var forwardedArguments: [[String]] = []
@@ -46,17 +48,61 @@ struct ComposeCommandTests {
     }
 
     @Test
-    func unsupportedSocketDoesNotLaunchCompose() async throws {
+    func socketPathPublishesSocketWithoutLaunchingCompose() async throws {
         let command = try ComposeCommand.parse(["--socket-path"])
-        do {
-            try await command.run { _ in
-                Issue.record("unsupported host socket option reached the guest")
+        var publishCount = 0
+        try await command.run(
+            compose: { _ in
+                Issue.record("socket path request reached the guest")
                 return 0
+            },
+            publishSocket: {
+                publishCount += 1
+                return "unix:///tmp/docker.socket"
             }
-            Issue.record("unsupported host socket option unexpectedly succeeded")
+        )
+        #expect(publishCount == 1)
+    }
+
+    @Test
+    func serveSocketRunsForwarderOnly() async throws {
+        let command = try ComposeCommand.parse(["--serve-socket"])
+        var served = false
+        try await command.run(
+            compose: { _ in
+                Issue.record("forwarder request reached the guest")
+                return 0
+            },
+            publishSocket: {
+                Issue.record("forwarder request started another forwarder")
+                return ""
+            },
+            serveSocket: { served = true }
+        )
+        #expect(served)
+    }
+
+    @Test(arguments: [["--serve-socket", "up"], ["--serve-socket", "--socket-path"], ["--serve-socket", "--install-path"]])
+    func serveSocketRejectsMixedInvocation(arguments: [String]) async throws {
+        let command = try ComposeCommand.parse(arguments)
+        do {
+            try await command.run(
+                compose: { _ in
+                    Issue.record("mixed forwarder invocation reached the guest")
+                    return 0
+                },
+                serveSocket: { Issue.record("mixed forwarder invocation started the forwarder") }
+            )
+            Issue.record("mixed forwarder invocation unexpectedly succeeded")
         } catch {
-            #expect(ComposeCommand.message(for: error).contains("Host Docker socket access is not supported"))
+            #expect(ComposeCommand.message(for: error).contains("--serve-socket cannot be combined"))
         }
+    }
+
+    @Test
+    func serveSocketIsHiddenFromHelp() {
+        #expect(!ComposeCommand.helpMessage().contains("--serve-socket"))
+        #expect(ComposeCommand.helpMessage().contains("--socket-path"))
     }
 
     @Test(arguments: [["--install-path", "up"], ["--install-path", "--completions", "bash"]])
