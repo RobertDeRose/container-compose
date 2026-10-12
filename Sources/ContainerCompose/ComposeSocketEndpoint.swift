@@ -42,6 +42,13 @@ struct ComposeSocketEndpoint: Sendable, Equatable {
         return true
     }
 
+    /// Connects without sending a request, which a running forwarder treats
+    /// as a probe: it checks the machine's published ports again, and does
+    /// not boot the machine.
+    func notifyForwarder() {
+        _ = isAccepting()
+    }
+
     static func connect(to path: FilePath) throws -> Int32 {
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else {

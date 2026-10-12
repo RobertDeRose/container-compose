@@ -146,6 +146,8 @@ public struct ComposeCommand: AsyncParsableCommand {
         let processRunner = ComposeProcessRunner()
         let manager = ComposeMachineManager(processRunner: processRunner)
         let snapshot = try await manager.ensureReady(log: log)
+        // The machine may have just booted; let the forwarder watch its ports.
+        ComposeSocketEndpoint().notifyForwarder()
         let homeDirectory = FilePath(FileManager.default.homeDirectoryForCurrentUser.path)
         let currentDirectory = FilePath(FileManager.default.currentDirectoryPath)
         let workingDirectory = try ComposeEnvironment.workingDirectory(

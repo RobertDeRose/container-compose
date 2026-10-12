@@ -30,6 +30,7 @@ final class ComposeSocketForwarder: @unchecked Sendable {
     private var activeConnections = 0
     private var draining = false
     private var onDrain: [@Sendable () -> Void] = []
+    private var onActivity: [@Sendable () -> Void] = []
 
     init(
         endpoint: ComposeSocketEndpoint,
@@ -87,6 +88,7 @@ final class ComposeSocketForwarder: @unchecked Sendable {
         let forwarder = ComposeSocketForwarder(endpoint: endpoint, session: session, log: log)
         let ports = ComposePortForwarder(connections: forwarder, log: log)
         forwarder.whenDraining { ports.stop() }
+        forwarder.whenActive { ports.nudge() }
         Task { await ports.run() }
 
         // The listener is closed by the accept source's cancel handler, as
@@ -155,6 +157,18 @@ final class ComposeSocketForwarder: @unchecked Sendable {
         lock.withLock { onDrain.append(action) }
     }
 
+    /// Registers work to run after a client connects, once the machine may
+    /// have been booted by it or by a Compose invocation.
+    func whenActive(_ action: @escaping @Sendable () -> Void) {
+        lock.withLock { onActivity.append(action) }
+    }
+
+    private func reportActivity() {
+        for action in lock.withLock({ onActivity }) {
+            action()
+        }
+    }
+
     private func drain() {
         let (alreadyDraining, actions) = lock.withLock {
             defer { draining = true }
@@ -181,7 +195,16 @@ final class ComposeSocketForwarder: @unchecked Sendable {
     }
 
     /// Bridges one client connection and takes ownership of its descriptor.
+    ///
+    /// A client that closes without sending anything is a probe, such as
+    /// `--socket-path` checking that the forwarder runs. It must not boot the
+    /// machine, so preparation waits for the first byte of a request.
     func forward(_ connection: Int32) async {
+        defer { reportActivity() }
+        guard await Self.awaitRequest(connection) else {
+            _ = close(connection)
+            return
+        }
         var staleContainerID: String?
         var failure: Error?
         // A cached container ID becomes stale when the machine stops or
@@ -194,6 +217,7 @@ final class ComposeSocketForwarder: @unchecked Sendable {
                 failure = error
                 break
             }
+            reportActivity()
             do {
                 try await Self.bridge(connection, containerID: containerID, configuration: Self.dialStdioConfiguration)
                 return
@@ -206,6 +230,21 @@ final class ComposeSocketForwarder: @unchecked Sendable {
         log.error("Docker socket connection failed", metadata: ["error": "\(reason)"])
         Self.respondUnavailable(connection, message: "container compose could not reach Docker in the Compose machine: \(reason)")
         _ = close(connection)
+    }
+
+    /// Waits until the client sends data, and returns false if it closes
+    /// the connection first.
+    static func awaitRequest(_ connection: Int32) async -> Bool {
+        await onThread {
+            var byte: UInt8 = 0
+            while true {
+                let count = recv(connection, &byte, 1, MSG_PEEK)
+                if count < 0, errno == EINTR {
+                    continue
+                }
+                return count > 0
+            }
+        }
     }
 
     /// Starts a guest process and relays `connection` through its stdin and
@@ -325,6 +364,8 @@ final class ComposeSocketForwarder: @unchecked Sendable {
 
     /// Returns whether the client has closed both directions. A client that
     /// only shut down writing (hijacked attach after stdin EOF) still reads.
+    /// A Unix socket reports a full close at once; a TCP connection only
+    /// after keepalive finds the peer gone (see `ComposePortListener`).
     static func peerClosed(_ connection: Int32) -> Bool {
         send(connection, "", 0, 0) < 0 && errno == EPIPE
     }

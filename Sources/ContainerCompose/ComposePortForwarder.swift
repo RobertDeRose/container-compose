@@ -14,35 +14,72 @@ import MachineAPIClient
 /// Mirrors TCP ports published by Docker in the Compose machine onto the
 /// host's loopback addresses, as Docker Desktop does for `localhost`.
 ///
-/// Published ports are read from the guest's `docker-proxy` processes rather
-/// than the Docker API, so polling neither opens a Docker client connection
-/// (which idle shutdown counts as activity) nor boots a stopped machine.
+/// While the machine runs, one long-lived guest process (`watchScript`)
+/// reports the published ports whenever they change. Published ports are
+/// read from the guest's `docker-proxy` processes rather than the Docker API,
+/// so watching neither opens a Docker client connection (which idle shutdown
+/// counts as activity) nor boots a stopped machine. One process per machine
+/// boot also matters because the runtime keeps a record of every exec process
+/// until the machine stops.
+///
+/// While the machine is stopped, its state is checked with growing intervals,
+/// and immediately when `nudge()` reports Docker or Compose activity.
 ///
 /// Each connection is relayed by `socat` in the guest, over process stdio
 /// rather than the machine's network address. The host cannot always reach
 /// that address (a host firewall may block the vmnet bridge), and a port
 /// published on `127.0.0.1` is only reachable from inside the guest anyway.
 final class ComposePortForwarder: @unchecked Sendable {
-    static let pollInterval: Duration = .seconds(2)
+    /// The first and the longest wait between machine state checks.
+    static let minimumRetryDelay: Duration = .seconds(2)
+    static let maximumRetryDelay: Duration = .seconds(30)
+    /// Consecutive failed checks of a machine not known to be stopped before
+    /// its listeners are closed.
+    static let failureLimit = 3
+    /// The watcher repeats an unchanged report this often, so ports that
+    /// were unavailable are retried and a stalled watcher is noticed.
+    static let heartbeatInterval: Duration = .seconds(30)
+    static let heartbeatTimeout: Duration = .seconds(75)
 
-    /// Lists `address port` for each TCP `docker-proxy`.
-    static let publishedPortsScript = """
-        for f in /proc/[0-9]*/cmdline; do
-            set -- $(tr '\\000' ' ' < "$f" 2>/dev/null)
-            case "${1:-}" in */docker-proxy|docker-proxy) ;; *) continue ;; esac
-            proto= address= port=
-            while [ $# -ge 2 ]; do
-                case "$1" in
-                    -proto) proto=$2 ;;
-                    -host-ip) address=$2 ;;
-                    -host-port) port=$2 ;;
-                esac
-                shift
+    /// Prints `ports <port> ...` for the TCP `docker-proxy` ports at start,
+    /// on every change, and every 30 seconds. It exits when the forwarder
+    /// stops reading.
+    static let watchScript = """
+        scan() {
+            for f in /proc/[0-9]*/cmdline; do
+                set -- $(tr '\\000' ' ' < "$f" 2>/dev/null)
+                case "${1:-}" in */docker-proxy|docker-proxy) ;; *) continue ;; esac
+                proto= port=
+                while [ $# -ge 2 ]; do
+                    case "$1" in
+                        -proto) proto=$2 ;;
+                        -host-port) port=$2 ;;
+                    esac
+                    shift
+                done
+                [ "$proto" = tcp ] && [ -n "$port" ] && echo "$port"
             done
-            [ "$proto" = tcp ] && [ -n "$port" ] && echo "$address $port"
+        }
+        last=- beats=0
+        while :; do
+            ports=$(scan | sort -un | tr '\\n' ' ')
+            if [ "$ports" != "$last" ] || [ "$beats" -ge 15 ]; then
+                echo "ports $ports" || exit 0
+                last=$ports beats=0
+            fi
+            beats=$((beats + 1))
+            sleep 2
         done
-        exit 0
         """
+
+    static let watchConfiguration = ProcessConfiguration(
+        executable: "/bin/sh",
+        arguments: ["-c", watchScript],
+        environment: ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
+        workingDirectory: "/",
+        terminal: false,
+        user: .id(uid: 0, gid: 0)
+    )
 
     /// Relays stdio to a port on the guest's loopback. Every published port
     /// listens there, whichever host address it was bound to. `-t` keeps the
@@ -65,15 +102,26 @@ final class ComposePortForwarder: @unchecked Sendable {
         let ports: Set<UInt16>
     }
 
+    enum MachineState: Sendable, Equatable {
+        case running(containerID: String)
+        /// Stopped, missing, or not owned by this plugin.
+        case stopped
+        /// The state could not be read.
+        case unknown
+    }
+
     private let connections: ComposeSocketForwarder
     private let log: Logger
     private let lock = NSLock()
     private var route: Route?
     private var listeners: [UInt16: ComposePortListener] = [:]
     /// Ports that cannot be forwarded and were already logged. They are
-    /// retried on every poll but logged once.
+    /// retried on every report but logged once.
     private var unavailable: Set<UInt16> = []
     private var stopped = false
+    private var nudged = false
+    private var sleeper: Task<Void, Never>?
+    private var watcher: (any ClientProcess)?
 
     init(connections: ComposeSocketForwarder, log: Logger) {
         self.connections = connections
@@ -81,62 +129,225 @@ final class ComposePortForwarder: @unchecked Sendable {
     }
 
     func run() async {
+        var delay = Self.minimumRetryDelay
+        var failures = 0
         while !lock.withLock({ stopped }) {
-            await update(route: await Self.currentRoute())
-            try? await Task.sleep(for: Self.pollInterval)
+            lock.withLock { nudged = false }
+            switch await Self.machineState() {
+            case .running(let containerID):
+                let started = ContinuousClock.now
+                if await watch(containerID: containerID) {
+                    failures = 0
+                    delay = Self.minimumRetryDelay
+                    // The watcher ends when the machine stops or the API
+                    // server restarts; check again at once unless it ended
+                    // suspiciously fast.
+                    if ContinuousClock.now - started >= Self.minimumRetryDelay {
+                        continue
+                    }
+                } else {
+                    failures += 1
+                }
+            case .stopped:
+                failures = 0
+                await update(route: nil)
+            case .unknown:
+                failures += 1
+            }
+            if failures == Self.failureLimit {
+                log.warning("Cannot read the Compose machine's published ports; closing their localhost listeners")
+                await update(route: nil)
+            }
+            if await pause(for: delay) {
+                delay = Self.minimumRetryDelay
+            } else {
+                delay = min(delay * 2, Self.maximumRetryDelay)
+            }
         }
     }
 
-    /// Closes every listener; open connections continue.
+    /// Asks for a prompt machine state check, for example after Docker or
+    /// Compose activity that may have booted the machine.
+    func nudge() {
+        let sleeping = lock.withLock {
+            nudged = true
+            return sleeper
+        }
+        sleeping?.cancel()
+    }
+
+    /// Closes every listener and ends the watcher; open connections continue.
     func stop() {
-        let closing = lock.withLock {
+        let (closing, sleeping, process) = lock.withLock {
             stopped = true
             defer { listeners = [:] }
-            return Array(listeners.values)
+            return (Array(listeners.values), sleeper, watcher)
         }
+        sleeping?.cancel()
         for listener in closing {
             listener.close()
         }
+        if let process {
+            Task { try? await process.kill(SIGKILL) }
+        }
     }
 
-    /// Returns nil unless this plugin's machine is running.
-    static func currentRoute() async -> Route? {
+    /// Waits for `duration` or a nudge, and returns whether it was nudged.
+    private func pause(for duration: Duration) async -> Bool {
+        let task = Task { _ = try? await Task.sleep(for: duration) }
+        let skip = lock.withLock {
+            guard !nudged, !stopped else { return true }
+            sleeper = task
+            return false
+        }
+        if skip {
+            task.cancel()
+        }
+        await task.value
+        return lock.withLock {
+            sleeper = nil
+            return nudged
+        }
+    }
+
+    static func machineState() async -> MachineState {
         do {
             let health = try await ClientHealthCheck.ping()
             let snapshot = try await MachineClient().inspect(id: ComposeMachineManager.machineID)
             guard snapshot.status == .running, let containerID = snapshot.containerId,
                 let record = try OwnershipStore(appRoot: health.appRoot).load()
             else {
-                return nil
+                return .stopped
             }
-            try ComposeMachineOwnership.validate(snapshot, record: record)
-            let result = try await ComposeProcessRunner().capture(
-                snapshot: snapshot,
-                executable: "/bin/sh",
-                arguments: ["-c", publishedPortsScript],
-                environment: [:],
-                workingDirectory: "/"
-            )
-            guard result.exitCode == 0 else {
-                return nil
+            do {
+                try ComposeMachineOwnership.validate(snapshot, record: record)
+            } catch {
+                return .stopped
             }
-            return route(containerID: containerID, scriptOutput: result.output)
+            return .running(containerID: containerID)
         } catch {
-            return nil
+            return .unknown
         }
     }
 
-    /// Parses the output of `publishedPortsScript`, merging the IPv4 and IPv6
-    /// bindings of a port.
-    static func route(containerID: String, scriptOutput: String) -> Route {
-        var ports = Set<UInt16>()
-        for line in scriptOutput.split(separator: "\n") {
-            guard let field = line.split(separator: " ").last, let port = UInt16(field), port > 0 else {
-                continue
-            }
-            ports.insert(port)
+    /// Runs the guest watcher and applies its reports until it ends, and
+    /// returns whether it reported at least once.
+    private func watch(containerID: String) async -> Bool {
+        let client = ComposeProcessClient()
+        let process: any ClientProcess
+        let reader: Int32
+        do {
+            let output = try ComposeRelayPipe()
+            process = try await client.createProcess(
+                containerId: containerID,
+                processId: UUID().uuidString.lowercased(),
+                configuration: Self.watchConfiguration,
+                stdio: [nil, output.takeWriteEnd(), nil]
+            )
+            try await process.start()
+            reader = output.takeOwnedEnd()
+        } catch {
+            log.debug("Cannot start the published port watcher", metadata: ["error": "\(error)"])
+            return false
         }
-        return Route(containerID: containerID, ports: ports)
+        let alreadyStopped = lock.withLock {
+            watcher = process
+            return stopped
+        }
+        defer { lock.withLock { watcher = nil } }
+        if alreadyStopped {
+            try? await process.kill(SIGKILL)
+        }
+
+        enum End {
+            case reports(Bool)
+            case exited
+        }
+        let reports = Self.lines(from: reader, timeout: Self.heartbeatTimeout)
+        let reported = await withTaskGroup(of: End.self) { group in
+            group.addTask {
+                var reported = false
+                for await line in reports {
+                    guard let ports = Self.ports(fromReport: line) else { continue }
+                    reported = true
+                    await self.update(route: Route(containerID: containerID, ports: ports))
+                }
+                return .reports(reported)
+            }
+            group.addTask {
+                _ = try? await process.wait()
+                return .exited
+            }
+            // Either the reports ended (a stalled or closed watcher) or the
+            // watcher exited; end the other.
+            var ends: [End] = []
+            if let first = await group.next() {
+                ends.append(first)
+                if case .reports = first {
+                    try? await process.kill(SIGKILL)
+                }
+            }
+            group.cancelAll()
+            for await end in group {
+                ends.append(end)
+            }
+            return ends.contains { if case .reports(true) = $0 { true } else { false } }
+        }
+        withExtendedLifetime(client) {}
+        return reported
+    }
+
+    /// Reads lines on a dedicated thread until EOF, a read error, or no input
+    /// for `timeout`, then closes `descriptor`. Only that thread closes it, so
+    /// its number cannot be reused while it is still being read.
+    static func lines(from descriptor: Int32, timeout: Duration) -> AsyncStream<String> {
+        AsyncStream { continuation in
+            Thread.detachNewThread {
+                defer {
+                    _ = close(descriptor)
+                    continuation.finish()
+                }
+                let milliseconds = Int32(timeout.components.seconds * 1000)
+                var pending = [UInt8]()
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                while true {
+                    var event = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+                    let ready = poll(&event, 1, milliseconds)
+                    if ready < 0, errno == EINTR {
+                        continue
+                    }
+                    guard ready > 0 else {
+                        return
+                    }
+                    let count = buffer.withUnsafeMutableBytes { read(descriptor, $0.baseAddress, $0.count) }
+                    if count < 0, errno == EINTR {
+                        continue
+                    }
+                    guard count > 0 else {
+                        return
+                    }
+                    pending.append(contentsOf: buffer[..<count])
+                    while let newline = pending.firstIndex(of: UInt8(ascii: "\n")) {
+                        continuation.yield(String(decoding: pending[..<newline], as: UTF8.self))
+                        pending.removeSubrange(...newline)
+                    }
+                    // A report is a few hundred bytes; anything longer is not one.
+                    if pending.count > 64 * 1024 {
+                        return
+                    }
+                }
+            }
+        }
+    }
+
+    /// Parses one `watchScript` report.
+    static func ports(fromReport line: String) -> Set<UInt16>? {
+        var fields = line.split(separator: " ")
+        guard fields.first == "ports" else {
+            return nil
+        }
+        fields.removeFirst()
+        return Set(fields.compactMap { UInt16($0) }.filter { $0 > 0 })
     }
 
     private func update(route newRoute: Route?) async {
@@ -478,14 +689,29 @@ final class ComposePortListener: @unchecked Sendable {
         return descriptor
     }
 
-    /// Accepts one pending connection as a blocking descriptor, or returns nil
-    /// when none is pending.
-    private static func accept(_ descriptor: Int32) -> Int32? {
+    static let keepaliveIdleSeconds: Int32 = 10
+
+    /// Accepts one pending connection as a blocking descriptor with TCP
+    /// keepalive, or returns nil when none is pending.
+    static func accept(_ descriptor: Int32) -> Int32? {
         guard let connection = ComposeSocketListener.accept(descriptor) else {
             return nil
         }
+        let size = socklen_t(MemoryLayout<Int32>.size)
         var enabled: Int32 = 1
-        _ = setsockopt(connection, IPPROTO_TCP, TCP_NODELAY, &enabled, socklen_t(MemoryLayout<Int32>.size))
+        _ = setsockopt(connection, IPPROTO_TCP, TCP_NODELAY, &enabled, size)
+        // A closed TCP client only sends FIN, which a half-close also sends,
+        // so the relay cannot tell them apart. Keepalive can: the closed
+        // client's socket expires after the FIN_WAIT_2 timeout (a minute), the
+        // next probe is reset, and sends fail with EPIPE, which `peerClosed`
+        // detects. A half-closed client still answers probes.
+        _ = setsockopt(connection, SOL_SOCKET, SO_KEEPALIVE, &enabled, size)
+        var idle = Self.keepaliveIdleSeconds
+        _ = setsockopt(connection, IPPROTO_TCP, TCP_KEEPALIVE, &idle, size)
+        var interval: Int32 = 5
+        _ = setsockopt(connection, IPPROTO_TCP, TCP_KEEPINTVL, &interval, size)
+        var count: Int32 = 3
+        _ = setsockopt(connection, IPPROTO_TCP, TCP_KEEPCNT, &count, size)
         return connection
     }
 }

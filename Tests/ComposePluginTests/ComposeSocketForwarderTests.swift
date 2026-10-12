@@ -157,6 +157,26 @@ struct ComposeSocketForwarderTests {
     }
 
     @Test
+    func awaitRequestRejectsProbesAndLeavesRequestBytes() async throws {
+        var probe: [Int32] = [0, 0]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &probe) == 0)
+        defer { close(probe[0]) }
+        close(probe[1])
+        #expect(await !ComposeSocketForwarder.awaitRequest(probe[0]))
+
+        var request: [Int32] = [0, 0]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &request) == 0)
+        defer {
+            close(request[0])
+            close(request[1])
+        }
+        _ = "GET".withCString { write(request[1], $0, 3) }
+        #expect(await ComposeSocketForwarder.awaitRequest(request[0]))
+        var buffer = [UInt8](repeating: 0, count: 8)
+        #expect(read(request[0], &buffer, buffer.count) == 3)
+    }
+
+    @Test
     func pumpCopiesUntilEndOfInput() throws {
         var source: [Int32] = [0, 0]
         var destination: [Int32] = [0, 0]

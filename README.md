@@ -173,7 +173,7 @@ TCP ports that containers publish are also forwarded to macOS `localhost`
 (`127.0.0.1` and `::1`), as Docker Desktop does, while the Docker socket
 forwarder described below is running. `container compose` starts it, and so does
 `--socket-path`. Ports bound to the machine's loopback, such as
-`127.0.0.1:4000:4000`, are forwarded too. Forwarding begins within about two
+`127.0.0.1:4000:4000`, are forwarded too. Forwarding begins within a few
 seconds of a container starting and stops when the port disappears or the
 machine stops.
 
@@ -184,8 +184,8 @@ machine stops.
 - A port that another program on the Mac already listens on, at `localhost` or
   on all interfaces, is skipped, so `localhost` traffic never splits between
   two programs. For example, AirPlay Receiver holds `*:5000` and `*:7000`. The
-  skip is logged once and retried every poll, so forwarding starts when the
-  port is freed.
+  skip is logged once and retried every 30 seconds, so forwarding starts when
+  the port is freed.
 - UDP is not forwarded.
 - Discovery reads the guest's `docker-proxy` processes. It does not work if the
   Docker userland proxy is disabled.
@@ -214,7 +214,7 @@ background. It does not contact the container services or boot the machine, so
 it is cheap enough for a shell profile. A forwarder started by a different
 plugin build is replaced, which is how upgrades take effect.
 
-The forwarder boots the `compose` machine on the first connection, so idle
+The forwarder boots the `compose` machine on the first Docker request, so idle
 shutdown still applies. Each connection is relayed to
 `docker system dial-stdio` inside the machine. If the machine cannot be
 prepared, clients receive a Docker API error that explains why. The socket is

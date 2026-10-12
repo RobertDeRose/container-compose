@@ -98,24 +98,39 @@ machines cannot publish sockets, so the plugin serves the same path itself:
    client's read side.
 5. The backing container ID is cached. The first connection, or a retry after a
    failed process creation (the machine stopped or rebooted), runs the normal
-   initialization path once for all waiting connections.
+   initialization path once for all waiting connections. Preparation waits for
+   the client's first byte: a connection that closes without sending anything,
+   such as the `--socket-path` check, is a probe and never boots the machine.
 6. A zero-length `send` on the client socket fails with `EPIPE` only after the
    client closes both directions. The forwarder checks this every second and
    sends SIGTERM to the guest relay, which would otherwise stay open on a
    quiet stream such as `events`. A half-close is left alone.
-7. On SIGTERM the forwarder removes its socket and releases the lock, so a
-   replacement can start at once, then exits when its connections finish.
+7. On SIGTERM the forwarder removes its socket, closes its port listeners, and
+   then releases the lock, so a replacement can take over every endpoint at
+   once. It exits when its connections finish.
 
 ## Published ports on localhost
 
 The same forwarder process mirrors published TCP ports onto the host's
 loopback addresses.
 
-- Every two seconds it pings the API server and inspects the `compose` machine.
-  If the machine is running and matches the ownership record, it runs a guest
-  script that lists `-host-ip`/`-host-port` from each TCP `docker-proxy`
-  command line. This never boots the machine and never opens a Docker client
-  connection, so it does not delay idle shutdown.
+- It pings the API server and inspects the `compose` machine. If the machine
+  is running and matches the ownership record, it starts one long-lived guest
+  watcher that reads the `-host-port` of each TCP `docker-proxy` command line
+  every two seconds. The watcher prints the port list at start, on each
+  change, and every 30 seconds. This never boots the machine and never opens a
+  Docker client connection, so it does not delay idle shutdown.
+- One watcher per boot, rather than one exec per check, matters because the
+  runtime keeps a record of every exec process until the machine stops.
+- When the watcher ends (the machine stopped or the API server restarted), the
+  forwarder checks the machine again at once. While the machine is stopped it
+  checks at intervals that double from 2 to 30 seconds, and immediately after
+  a Docker connection or a `container compose` invocation, which connects to
+  the socket without sending anything once the machine is ready.
+- A watcher that cannot start or stops reporting for 75 seconds counts as a
+  failed check, as does an unreadable machine state. The listeners stay open
+  until three checks in a row fail or the machine is known to be stopped, so a
+  transient error does not drop working forwards.
 - For each port it listens on `127.0.0.1` and `::1`, both or neither. When an
   unprivileged bind below 1024 is refused, it binds the wildcard address and
   closes connections from non-loopback peers.
@@ -130,7 +145,7 @@ loopback addresses.
   kernel filters the system socket table for processes without Apple's private
   network-statistics entitlement, and children of an ad-hoc-signed process get
   an empty table.
-- Skipped ports are retried every poll and logged once.
+- Skipped ports are retried on every watcher report and logged once.
 - Every connection goes through a per-connection guest relay,
   `socat -t 86400 STDIO TCP:127.0.0.1:<port>`, with pipe stdio, bridged the
   same way as the Docker socket. Every published port listens on the guest
@@ -138,6 +153,12 @@ loopback addresses.
   used: a host firewall can block the vmnet bridge while process stdio still
   works. The long `-t` keeps the relay open after a client half-closes, so the
   reply still arrives; the client-disconnect check ends it otherwise.
+- A TCP client sends the same FIN for a full close as for a half-close, so the
+  zero-length `send` check cannot tell them apart at first. Accepted port
+  connections enable TCP keepalive (10 second idle, three 5 second probes). A
+  closed client's socket expires after the FIN_WAIT_2 timeout (a minute), the
+  next probe is reset, and the check then fails with `EPIPE`. A half-closed
+  client still answers probes, so its relay stays open.
 - Port listeners close when draining starts, so a replacement forwarder can
   bind them at once.
 

@@ -7,22 +7,92 @@ import Testing
 
 @testable import ContainerCompose
 
-@Suite("Published port forwarder")
+/// Serialized: these tests bind real ports, and one test's ephemeral port
+/// can be a port another test just closed and expects to stay closed.
+@Suite("Published port forwarder", .serialized)
 struct ComposePortForwarderTests {
     @Test
-    func routeMergesAddressFamiliesAndIgnoresNoise() {
-        let output = """
-            127.0.0.1 4000
-            ::1 4000
-            0.0.0.0 8080
-            :: 8080
-            127.0.0.1 80
-            not-a-port
-            127.0.0.1 0
+    func reportParsingIgnoresNoise() {
+        #expect(ComposePortForwarder.ports(fromReport: "ports 80 4000 8080 ") == [80, 4000, 8080])
+        #expect(ComposePortForwarder.ports(fromReport: "ports ") == [])
+        #expect(ComposePortForwarder.ports(fromReport: "ports 0 x 70000 22") == [22])
+        #expect(ComposePortForwarder.ports(fromReport: "sh: tr: not found") == nil)
+    }
 
-            """
-        let route = ComposePortForwarder.route(containerID: "machine", scriptOutput: output)
-        #expect(route == .init(containerID: "machine", ports: [80, 4000, 8080]))
+    @Test
+    func watchScriptIsValidShell() throws {
+        let shell = Process()
+        shell.executableURL = URL(fileURLWithPath: "/bin/sh")
+        shell.arguments = ["-n", "-c", ComposePortForwarder.watchScript]
+        try shell.run()
+        shell.waitUntilExit()
+        #expect(shell.terminationStatus == 0)
+    }
+
+    @Test
+    func linesSplitsInputAndClosesAtEndOfInput() async throws {
+        var descriptors: [Int32] = [0, 0]
+        #expect(pipe(&descriptors) == 0)
+        let lines = ComposePortForwarder.lines(from: descriptors[0], timeout: .seconds(10))
+        let text = "ports 80\npor"
+        _ = text.withCString { write(descriptors[1], $0, strlen($0)) }
+        _ = "ts 443\npartial".withCString { write(descriptors[1], $0, strlen($0)) }
+        close(descriptors[1])
+        var received: [String] = []
+        for await line in lines {
+            received.append(line)
+        }
+        #expect(received == ["ports 80", "ports 443"])
+    }
+
+    @Test
+    func linesEndsWhenInputStalls() async throws {
+        var descriptors: [Int32] = [0, 0]
+        #expect(pipe(&descriptors) == 0)
+        defer { close(descriptors[1]) }
+        let lines = ComposePortForwarder.lines(from: descriptors[0], timeout: .seconds(1))
+        let started = ContinuousClock.now
+        var received = 0
+        for await _ in lines {
+            received += 1
+        }
+        #expect(received == 0)
+        #expect(ContinuousClock.now - started < .seconds(5))
+    }
+
+    @Test
+    func acceptedConnectionsUseKeepalive() throws {
+        let listener = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(listener) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        try withUnsafeMutablePointer(to: &address) { pointer in
+            try pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                try #require(bind(listener, $0, length) == 0)
+                try #require(listen(listener, 1) == 0)
+                try #require(getsockname(listener, $0, &length) == 0)
+            }
+        }
+        let client = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(client) }
+        let connected = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(client, $0, length) }
+        }
+        try #require(connected == 0)
+        let connection = try #require(ComposePortListener.accept(listener))
+        defer { close(connection) }
+
+        func option(_ level: Int32, _ name: Int32) -> Int32 {
+            var value: Int32 = 0
+            var size = socklen_t(MemoryLayout<Int32>.size)
+            getsockopt(connection, level, name, &value, &size)
+            return value
+        }
+        #expect(option(SOL_SOCKET, SO_KEEPALIVE) != 0)
+        #expect(option(IPPROTO_TCP, TCP_KEEPALIVE) == ComposePortListener.keepaliveIdleSeconds)
+        #expect(option(IPPROTO_TCP, TCP_NODELAY) != 0)
     }
 
     @Test(arguments: [
