@@ -29,6 +29,17 @@ First use requires its builder and access to the pinned Debian/Docker package
 repositories. Existing images and machines are reused. A prebuilt compatible
 image can be selected with `CONTAINER_COMPOSE_MACHINE_IMAGE`.
 
+The `Machine image` GitHub Actions workflow publishes the same image for
+`linux/arm64` to `ghcr.io/<owner>/container-compose-machine`. It runs on pushes
+to `main` that change `Sources/ContainerCompose/Resources` (tagged `edge`), on
+`v*` tags (tagged with the version), and manually for any branch. Every image is
+also tagged `sha-<commit>`, and the run summary prints the digest to pin, for
+example:
+
+```bash
+export CONTAINER_COMPOSE_MACHINE_IMAGE=ghcr.io/<owner>/container-compose-machine@sha256:<digest>
+```
+
 ## Build and install
 
 ```bash
