@@ -481,24 +481,11 @@ final class ComposePortListener: @unchecked Sendable {
     /// Accepts one pending connection as a blocking descriptor, or returns nil
     /// when none is pending.
     private static func accept(_ descriptor: Int32) -> Int32? {
-        while true {
-            let connection = Darwin.accept(descriptor, nil, nil)
-            if connection < 0 {
-                if errno == EINTR || errno == ECONNABORTED {
-                    continue
-                }
-                return nil
-            }
-            configure(connection)
-            return connection
+        guard let connection = ComposeSocketListener.accept(descriptor) else {
+            return nil
         }
-    }
-
-    private static func configure(_ connection: Int32) {
-        _ = fcntl(connection, F_SETFL, fcntl(connection, F_GETFL) & ~O_NONBLOCK)
-        _ = fcntl(connection, F_SETFD, FD_CLOEXEC)
         var enabled: Int32 = 1
-        _ = setsockopt(connection, SOL_SOCKET, SO_NOSIGPIPE, &enabled, socklen_t(MemoryLayout<Int32>.size))
         _ = setsockopt(connection, IPPROTO_TCP, TCP_NODELAY, &enabled, socklen_t(MemoryLayout<Int32>.size))
+        return connection
     }
 }

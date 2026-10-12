@@ -31,11 +31,20 @@ enum ComposeSocketLauncher {
             stop(owner: owner, endpoint: endpoint, timeout: .seconds(3))
         }
 
-        try spawn(executablePath: executablePath, endpoint: endpoint)
+        let pid = try spawn(executablePath: executablePath, endpoint: endpoint)
         let deadline = ContinuousClock.now + startTimeout
         while ContinuousClock.now < deadline {
             if endpoint.isAccepting() {
                 return
+            }
+            // A forwarder that exits early has failed, or found another one
+            // starting; reap it and stop waiting once no listener appears.
+            var status: Int32 = 0
+            if waitpid(pid, &status, WNOHANG) == pid {
+                if endpoint.isAccepting() {
+                    return
+                }
+                break
             }
             usleep(20_000)
         }
@@ -59,8 +68,8 @@ enum ComposeSocketLauncher {
     }
 
     /// Starts a detached forwarder in its own session with its output in the
-    /// forwarder log.
-    static func spawn(executablePath: String, endpoint: ComposeSocketEndpoint) throws {
+    /// forwarder log, and returns its process ID.
+    static func spawn(executablePath: String, endpoint: ComposeSocketEndpoint) throws -> pid_t {
         let logDirectory = endpoint.logPath.removingLastComponent()
         try FileManager.default.createDirectory(
             atPath: logDirectory.string,
@@ -113,5 +122,6 @@ enum ComposeSocketLauncher {
                 cause: POSIXError(POSIXErrorCode(rawValue: result) ?? .EIO)
             )
         }
+        return pid
     }
 }

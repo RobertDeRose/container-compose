@@ -89,21 +89,13 @@ final class ComposeSocketForwarder: @unchecked Sendable {
         forwarder.whenDraining { ports.stop() }
         Task { await ports.run() }
 
-        let queue = DispatchQueue(label: "container.compose.socket")
-        var sources: [DispatchSourceProtocol] = []
-        for signalNumber in [SIGTERM, SIGINT, SIGHUP] {
-            signal(signalNumber, SIG_IGN)
-            let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: queue)
-            source.setEventHandler {
-                listener.close()
-                lock.release()
-                log.info("Docker socket forwarder stopping", metadata: ["signal": "\(signalNumber)"])
-                forwarder.drain()
-            }
-            source.resume()
-            sources.append(source)
-        }
-        let acceptSource = DispatchSource.makeReadSource(fileDescriptor: listener.descriptor, queue: queue)
+        // The listener is closed by the accept source's cancel handler, as
+        // dispatch requires, on a queue the signal handler can wait on.
+        let acceptSource = DispatchSource.makeReadSource(
+            fileDescriptor: listener.descriptor,
+            queue: DispatchQueue(label: "container.compose.socket.accept")
+        )
+        let acceptClosed = DispatchGroup()
         acceptSource.setEventHandler {
             while let connection = listener.accept() {
                 forwarder.connectionOpened()
@@ -113,8 +105,30 @@ final class ComposeSocketForwarder: @unchecked Sendable {
                 }
             }
         }
+        acceptClosed.enter()
+        acceptSource.setCancelHandler {
+            listener.close()
+            acceptClosed.leave()
+        }
         acceptSource.resume()
-        sources.append(acceptSource)
+
+        let queue = DispatchQueue(label: "container.compose.socket")
+        var sources: [DispatchSourceProtocol] = [acceptSource]
+        for signalNumber in [SIGTERM, SIGINT, SIGHUP] {
+            signal(signalNumber, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: queue)
+            source.setEventHandler {
+                acceptSource.cancel()
+                acceptClosed.wait()
+                log.info("Docker socket forwarder stopping", metadata: ["signal": "\(signalNumber)"])
+                // Draining closes the port listeners before the lock is
+                // released, so a replacement can bind every endpoint at once.
+                forwarder.drain()
+                lock.release()
+            }
+            source.resume()
+            sources.append(source)
+        }
 
         withExtendedLifetime(sources) {}
         while true {
@@ -142,19 +156,23 @@ final class ComposeSocketForwarder: @unchecked Sendable {
     }
 
     private func drain() {
-        let (alreadyDraining, idle, actions) = lock.withLock {
+        let (alreadyDraining, actions) = lock.withLock {
             defer { draining = true }
-            return (draining, activeConnections == 0, onDrain)
+            return (draining, onDrain)
         }
-        if !alreadyDraining {
-            for action in actions {
-                action()
-            }
-        }
-        if alreadyDraining || idle {
+        if alreadyDraining {
             exitStopped()
         }
-        log.info("Waiting for open Docker connections", metadata: ["connections": "\(lock.withLock { activeConnections })"])
+        for action in actions {
+            action()
+        }
+        // Count only after the actions stop accepting, so a connection
+        // accepted while they ran is waited for.
+        let connections = lock.withLock { activeConnections }
+        if connections == 0 {
+            exitStopped()
+        }
+        log.info("Waiting for open Docker connections", metadata: ["connections": "\(connections)"])
     }
 
     private func exitStopped() -> Never {
@@ -184,9 +202,9 @@ final class ComposeSocketForwarder: @unchecked Sendable {
                 failure = error
             }
         }
-        let message = "container compose could not reach Docker in the Compose machine: \(failure.map { "\($0)" } ?? "unknown error")"
-        log.error("Docker socket connection failed", metadata: ["error": "\(failure.map { "\($0)" } ?? "unknown")"])
-        Self.respondUnavailable(connection, message: message)
+        let reason = failure.map { "\($0)" } ?? "unknown error"
+        log.error("Docker socket connection failed", metadata: ["error": "\(reason)"])
+        Self.respondUnavailable(connection, message: "container compose could not reach Docker in the Compose machine: \(reason)")
         _ = close(connection)
     }
 
@@ -233,7 +251,9 @@ final class ComposeSocketForwarder: @unchecked Sendable {
         let monitor = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.disconnectPollInterval)
-                if Self.peerClosed(connection) {
+                // Relay awaits this task after the process exits; a kill
+                // then would only wait on an acknowledgement that never comes.
+                if !Task.isCancelled, Self.peerClosed(connection) {
                     try? await process.kill(SIGTERM)
                     return
                 }
@@ -241,18 +261,21 @@ final class ComposeSocketForwarder: @unchecked Sendable {
         }
         _ = try? await process.wait()
         monitor.cancel()
+        await monitor.value
         // Output written before exit is still in the pipe. Deliver it, but do
         // not let a pipe the runtime has not closed hold the client open.
         _ = try? await Timeout.run(for: Self.outputDrainTimeout) { await guestToClient.value }
         // Wakes the client-to-guest copy and ends the client's stream.
         _ = shutdown(connection, SHUT_RDWR)
         await clientToGuest.value
-        _ = close(connection)
         // A copy still blocked on the output pipe ends when the runtime
-        // closes it; only then can its descriptor be released.
+        // closes it, and may then still write to or shut down the client
+        // socket. Release both descriptors only after it finishes so neither
+        // number is reused by another connection while it is in use.
         Task {
             await guestToClient.value
             _ = close(output)
+            _ = close(connection)
         }
     }
 
@@ -512,8 +535,22 @@ final class ComposeSocketLock: @unchecked Sendable {
         return ComposeSocketLock(descriptor: descriptor)
     }
 
+    /// Returns the recorded owner while the lock is held. A released lock
+    /// keeps its last record, whose process ID may since belong to an
+    /// unrelated process.
     static func owner(at path: FilePath) -> Owner? {
-        guard let text = try? String(contentsOfFile: path.string, encoding: .utf8) else {
+        let descriptor = open(path.string, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        guard descriptor >= 0 else {
+            return nil
+        }
+        defer { _ = close(descriptor) }
+        if flock(descriptor, LOCK_SH | LOCK_NB) == 0 {
+            _ = flock(descriptor, LOCK_UN)
+            return nil
+        }
+        guard errno == EWOULDBLOCK,
+            let text = try? String(contentsOfFile: path.string, encoding: .utf8)
+        else {
             return nil
         }
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
@@ -616,6 +653,13 @@ final class ComposeSocketListener: @unchecked Sendable {
     /// Accepts one pending connection as a blocking descriptor, or returns nil
     /// when none is pending.
     func accept() -> Int32? {
+        Self.accept(descriptor)
+    }
+
+    /// Accepts one pending connection on a non-blocking listening socket as
+    /// a blocking, close-on-exec descriptor without SIGPIPE, or returns nil
+    /// when none is pending.
+    static func accept(_ descriptor: Int32) -> Int32? {
         while true {
             let connection = Darwin.accept(descriptor, nil, nil)
             if connection < 0 {
