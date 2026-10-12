@@ -12,11 +12,25 @@ import Testing
 @Suite("Published port forwarder", .serialized)
 struct ComposePortForwarderTests {
     @Test
-    func reportParsingIgnoresNoise() {
-        #expect(ComposePortForwarder.ports(fromReport: "ports 80 4000 8080 ") == [80, 4000, 8080])
-        #expect(ComposePortForwarder.ports(fromReport: "ports ") == [])
-        #expect(ComposePortForwarder.ports(fromReport: "ports 0 x 70000 22") == [22])
-        #expect(ComposePortForwarder.ports(fromReport: "sh: tr: not found") == nil)
+    func reportParsingKeepsEachPortsAddress() {
+        let report = "ports 0.0.0.0/80 ::/80 127.0.0.1/4000 ::1/5000 192.168.64.2/8080 0.0.0.0/0 x/70000 junk "
+        #expect(
+            ComposePortForwarder.targets(fromReport: report)
+                == [80: "127.0.0.1", 4000: "127.0.0.1", 5000: "::1", 8080: "192.168.64.2"]
+        )
+        #expect(ComposePortForwarder.targets(fromReport: "ports ") == [:])
+        #expect(ComposePortForwarder.targets(fromReport: "sh: tr: not found") == nil)
+    }
+
+    @Test(arguments: [
+        (["::"], "::1"),
+        (["::1", "127.0.0.1"], "127.0.0.1"),
+        (["192.168.64.2", "::1"], "::1"),
+        (["192.168.64.2", "10.0.0.5"], "10.0.0.5"),
+        (["127.0.0.2"], "127.0.0.2"),
+    ])
+    func targetPrefersWildcardThenLoopback(addresses: [String], target: String) {
+        #expect(ComposePortForwarder.target(for: addresses) == target)
     }
 
     @Test
@@ -169,19 +183,52 @@ struct ComposePortForwarderTests {
     }
 
     @Test
-    func relayTargetsTheGuestLoopback() {
-        let configuration = ComposePortForwarder.relayConfiguration(port: 4000)
-        #expect(configuration.executable == "/usr/bin/socat")
-        #expect(configuration.arguments.suffix(2) == ["STDIO", "TCP:127.0.0.1:4000"])
+    func relayTargetsThePublishedAddress() {
+        let configuration = ComposePortForwarder.relayConfiguration(address: "::1", port: 4000)
+        #expect(configuration.executable == "/bin/bash")
+        #expect(configuration.arguments == ["-c", ComposePortForwarder.relayScript, "relay", "::1", "4000"])
         #expect(!configuration.terminal)
     }
 
-    /// Runs the relay's exact arguments with a host socat when one exists.
+    /// Runs the relay script with the host's bash and a host socat.
+    private static func runRelay(port: UInt16, input: Data, halfClose: Bool) async throws -> (Data?, Bool) {
+        let configuration = ComposePortForwarder.relayConfiguration(address: "127.0.0.1", port: port)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = Array(configuration.arguments)
+        process.environment = ["PATH": "\(URL(fileURLWithPath: hostSocat).deletingLastPathComponent().path):/usr/bin:/bin"]
+        let stdin = Pipe()
+        let stdout = Pipe()
+        process.standardInput = stdin
+        process.standardOutput = stdout
+        try process.run()
+        defer {
+            try? stdin.fileHandleForWriting.close()
+            process.waitUntilExit()
+        }
+        try stdin.fileHandleForWriting.write(contentsOf: input)
+        if halfClose {
+            try stdin.fileHandleForWriting.close()
+        }
+        let reading = Task { await ComposeSocketForwarder.onThread { try? stdout.fileHandleForReading.readToEnd() } }
+        let finished = await ComposeSocketForwarder.completes(Task { _ = await reading.value }, within: .seconds(5))
+        let output = finished ? await reading.value : nil
+        // The relay exits on its own once the server's side ends.
+        for _ in 0..<50 where process.isRunning {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let exited = !process.isRunning
+        if !exited {
+            process.terminate()
+        }
+        return (output, exited)
+    }
+
     @Test(.enabled(if: FileManager.default.isExecutableFile(atPath: hostSocat)))
-    func relayForwardsDataAndKeepsReadingAfterHalfClose() async throws {
+    func relayKeepsReadingAfterTheClientHalfCloses() async throws {
         let server = try TCPServer()
         defer { server.close() }
-        // Echo everything, then answer once the client half-closes.
+        // Answer once the client half-closes.
         let echo = Task.detached {
             let connection = server.acceptOne()
             defer { Darwin.close(connection) }
@@ -192,28 +239,37 @@ struct ComposePortForwarderTests {
                 guard count > 0 else { break }
                 received.append(contentsOf: buffer[0..<count])
             }
-            try? await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(for: .milliseconds(500))
             let reply = Data("echo:".utf8) + received
             _ = reply.withUnsafeBytes { write(connection, $0.baseAddress, $0.count) }
         }
-
-        let configuration = ComposePortForwarder.relayConfiguration(port: server.port)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: Self.hostSocat)
-        process.arguments = configuration.arguments
-        let input = Pipe()
-        let output = Pipe()
-        process.standardInput = input
-        process.standardOutput = output
-        try process.run()
-        try input.fileHandleForWriting.write(contentsOf: Data("hello".utf8))
-        try input.fileHandleForWriting.close()
-        let reply = try output.fileHandleForReading.readToEnd()
-        process.waitUntilExit()
+        let (output, exited) = try await Self.runRelay(port: server.port, input: Data("hello".utf8), halfClose: true)
         await echo.value
+        #expect(output == Data("echo:hello".utf8))
+        #expect(exited)
+    }
 
-        #expect(reply == Data("echo:hello".utf8))
-        #expect(process.terminationStatus == 0)
+    /// A close-delimited reply must end, and the relay exit, while the
+    /// client still has its writing side open.
+    @Test(.enabled(if: FileManager.default.isExecutableFile(atPath: hostSocat)))
+    func relayEndsWhenTheServerCloses() async throws {
+        let server = try TCPServer()
+        defer { server.close() }
+        let reply = Task.detached {
+            let connection = server.acceptOne()
+            var buffer = [UInt8](repeating: 0, count: 64)
+            _ = read(connection, &buffer, buffer.count)
+            _ = "HTTP/1.0 200 OK\r\n\r\nbody".withCString { write(connection, $0, strlen($0)) }
+            Darwin.close(connection)
+        }
+        let (output, exited) = try await Self.runRelay(
+            port: server.port,
+            input: Data("GET / HTTP/1.0\r\n\r\n".utf8),
+            halfClose: false
+        )
+        await reply.value
+        #expect(output == Data("HTTP/1.0 200 OK\r\n\r\nbody".utf8))
+        #expect(exited)
     }
 
     static let hostSocat = "/opt/homebrew/bin/socat"

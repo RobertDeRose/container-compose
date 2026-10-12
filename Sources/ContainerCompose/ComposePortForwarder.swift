@@ -25,7 +25,7 @@ import MachineAPIClient
 /// While the machine is stopped, its state is checked with growing intervals,
 /// and immediately when `nudge()` reports Docker or Compose activity.
 ///
-/// Each connection is relayed by `socat` in the guest, over process stdio
+/// Each connection is relayed by `relayScript` in the guest, over process stdio
 /// rather than the machine's network address. The host cannot always reach
 /// that address (a host firewall may block the vmnet bridge), and a port
 /// published on `127.0.0.1` is only reachable from inside the guest anyway.
@@ -41,28 +41,29 @@ final class ComposePortForwarder: @unchecked Sendable {
     static let heartbeatInterval: Duration = .seconds(30)
     static let heartbeatTimeout: Duration = .seconds(75)
 
-    /// Prints `ports <port> ...` for the TCP `docker-proxy` ports at start,
-    /// on every change, and every 30 seconds. It exits when the forwarder
-    /// stops reading.
+    /// Prints `ports <address>/<port> ...` for the TCP `docker-proxy`
+    /// bindings at start, on every change, and every 30 seconds. It exits
+    /// when the forwarder stops reading.
     static let watchScript = """
         scan() {
             for f in /proc/[0-9]*/cmdline; do
                 set -- $(tr '\\000' ' ' < "$f" 2>/dev/null)
                 case "${1:-}" in */docker-proxy|docker-proxy) ;; *) continue ;; esac
-                proto= port=
+                proto= address=0.0.0.0 port=
                 while [ $# -ge 2 ]; do
                     case "$1" in
                         -proto) proto=$2 ;;
+                        -host-ip) address=$2 ;;
                         -host-port) port=$2 ;;
                     esac
                     shift
                 done
-                [ "$proto" = tcp ] && [ -n "$port" ] && echo "$port"
+                [ "$proto" = tcp ] && [ -n "$port" ] && echo "$address/$port"
             done
         }
         last=- beats=0
         while :; do
-            ports=$(scan | sort -un | tr '\\n' ' ')
+            ports=$(scan | sort -u | tr '\\n' ' ')
             if [ "$ports" != "$last" ] || [ "$beats" -ge 15 ]; then
                 echo "ports $ports" || exit 0
                 last=$ports beats=0
@@ -81,14 +82,36 @@ final class ComposePortForwarder: @unchecked Sendable {
         user: .id(uid: 0, gid: 0)
     )
 
-    /// Relays stdio to a port on the guest's loopback. Every published port
-    /// listens there, whichever host address it was bound to. `-t` keeps the
-    /// relay open after the client half-closes so the reply still arrives;
-    /// the forwarder ends it when the client goes away.
-    static func relayConfiguration(port: UInt16) -> ProcessConfiguration {
+    /// Relays stdio to a published port, `$1` port `$2`, with one `socat`
+    /// per direction sharing the connection.
+    ///
+    /// The runtime ends the host's output pipe only when the process exits,
+    /// not when the guest closes stdout, so the relay must exit when the
+    /// server closes. A single `socat` cannot: it either waits for both
+    /// directions, holding a close-delimited reply open while the client
+    /// keeps writing, or exits a timeout after the first EOF, cutting off the
+    /// reply to a client that half-closed. Here the client-to-server copy
+    /// shuts down the socket's sending side at the client's EOF, and the relay
+    /// exits once the server-to-client copy reaches the server's EOF.
+    /// Background commands get `/dev/null` as stdin unless redirected.
+    static let relayScript = """
+        exec 3<>"/dev/tcp/$1/$2" || exit 1
+        socat -u STDIN FD:3,shut-down <&0 >/dev/null 2>&1 &
+        writer=$!
+        socat -u FD:3 STDOUT </dev/null &
+        reader=$!
+        exec 3>&- </dev/null
+        trap 'kill $writer $reader 2>/dev/null' TERM INT HUP
+        wait $reader
+        kill $writer 2>/dev/null
+        """
+
+    /// Relays stdio to a published port at the guest address it was
+    /// published on. The forwarder ends the relay when the client goes away.
+    static func relayConfiguration(address: String, port: UInt16) -> ProcessConfiguration {
         ProcessConfiguration(
-            executable: "/usr/bin/socat",
-            arguments: ["-t", "86400", "STDIO", "TCP:127.0.0.1:\(port)"],
+            executable: "/bin/bash",
+            arguments: ["-c", relayScript, "relay", address, "\(port)"],
             environment: ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
             workingDirectory: "/",
             terminal: false,
@@ -96,10 +119,13 @@ final class ComposePortForwarder: @unchecked Sendable {
         )
     }
 
-    /// The running machine's published ports.
+    /// The running machine's published ports, each with the guest address
+    /// that its connections are relayed to.
     struct Route: Sendable, Equatable {
         let containerID: String
-        let ports: Set<UInt16>
+        let targets: [UInt16: String]
+
+        var ports: Set<UInt16> { Set(targets.keys) }
     }
 
     enum MachineState: Sendable, Equatable {
@@ -268,9 +294,9 @@ final class ComposePortForwarder: @unchecked Sendable {
             group.addTask {
                 var reported = false
                 for await line in reports {
-                    guard let ports = Self.ports(fromReport: line) else { continue }
+                    guard let targets = Self.targets(fromReport: line) else { continue }
                     reported = true
-                    await self.update(route: Route(containerID: containerID, ports: ports))
+                    await self.update(route: Route(containerID: containerID, targets: targets))
                 }
                 return .reports(reported)
             }
@@ -340,14 +366,44 @@ final class ComposePortForwarder: @unchecked Sendable {
         }
     }
 
-    /// Parses one `watchScript` report.
-    static func ports(fromReport line: String) -> Set<UInt16>? {
+    /// Parses one `watchScript` report into the guest address to relay each
+    /// port to.
+    static func targets(fromReport line: String) -> [UInt16: String]? {
         var fields = line.split(separator: " ")
         guard fields.first == "ports" else {
             return nil
         }
         fields.removeFirst()
-        return Set(fields.compactMap { UInt16($0) }.filter { $0 > 0 })
+        var bindings: [UInt16: [String]] = [:]
+        for field in fields {
+            guard let slash = field.lastIndex(of: "/"), let port = UInt16(field[field.index(after: slash)...]), port > 0 else {
+                continue
+            }
+            bindings[port, default: []].append(String(field[..<slash]))
+        }
+        return bindings.mapValues(target(for:))
+    }
+
+    /// Chooses where to connect for a port published on `addresses`. A
+    /// wildcard binding also listens on loopback; otherwise loopback is
+    /// preferred over an address on the machine's network, so one port bound
+    /// to several addresses resolves the same way every time.
+    static func target(for addresses: [String]) -> String {
+        func rank(_ address: String) -> Int {
+            switch address {
+            case "0.0.0.0", "": 0
+            case "::": 1
+            case _ where address.hasPrefix("127."): 2
+            case "::1": 3
+            default: 4
+            }
+        }
+        let best = addresses.min { (rank($0), $0) < (rank($1), $1) } ?? "0.0.0.0"
+        switch best {
+        case "0.0.0.0", "": return "127.0.0.1"
+        case "::": return "::1"
+        default: return best
+        }
     }
 
     private func update(route newRoute: Route?) async {
@@ -422,7 +478,7 @@ final class ComposePortForwarder: @unchecked Sendable {
     }
 
     private func forward(_ connection: Int32, port: UInt16) async {
-        guard let route = lock.withLock({ route }), route.ports.contains(port) else {
+        guard let route = lock.withLock({ route }), let address = route.targets[port] else {
             _ = close(connection)
             return
         }
@@ -430,7 +486,7 @@ final class ComposePortForwarder: @unchecked Sendable {
             try await ComposeSocketForwarder.bridge(
                 connection,
                 containerID: route.containerID,
-                configuration: Self.relayConfiguration(port: port)
+                configuration: Self.relayConfiguration(address: address, port: port)
             )
         } catch {
             log.warning("Published port connection failed", metadata: ["port": "\(port)", "error": "\(error)"])

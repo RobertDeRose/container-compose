@@ -189,9 +189,10 @@ machine stops.
 - UDP is not forwarded.
 - Discovery reads the guest's `docker-proxy` processes. It does not work if the
   Docker userland proxy is disabled.
-- Each connection is relayed by `socat` inside the machine, over the same
-  process channel as `container machine run`, so it works even when the Mac
-  cannot reach the machine's network address.
+- Each connection is relayed by `socat` inside the machine to the address the
+  port was published on, over the same process channel as
+  `container machine run`, so it works even when the Mac cannot reach the
+  machine's network address.
 
 Published ports remain reachable through the machine's address as well. The
 ordinary `compose.machine` hostname can use the host's existing `machine` DNS

@@ -116,7 +116,7 @@ loopback addresses.
 
 - It pings the API server and inspects the `compose` machine. If the machine
   is running and matches the ownership record, it starts one long-lived guest
-  watcher that reads the `-host-port` of each TCP `docker-proxy` command line
+  watcher that reads the `-host-ip` and `-host-port` of each TCP `docker-proxy` command line
   every two seconds. The watcher prints the port list at start, on each
   change, and every 30 seconds. This never boots the machine and never opens a
   Docker client connection, so it does not delay idle shutdown.
@@ -146,13 +146,24 @@ loopback addresses.
   network-statistics entitlement, and children of an ad-hoc-signed process get
   an empty table.
 - Skipped ports are retried on every watcher report and logged once.
-- Every connection goes through a per-connection guest relay,
-  `socat -t 86400 STDIO TCP:127.0.0.1:<port>`, with pipe stdio, bridged the
-  same way as the Docker socket. Every published port listens on the guest
-  loopback, whichever address it was bound to. The machine's address is not
-  used: a host firewall can block the vmnet bridge while process stdio still
-  works. The long `-t` keeps the relay open after a client half-closes, so the
-  reply still arrives; the client-disconnect check ends it otherwise.
+- Every connection goes through a per-connection guest relay with pipe stdio,
+  bridged the same way as the Docker socket. The relay runs inside the guest, so the host never needs to
+  reach the machine's address: a host firewall can block the vmnet bridge
+  while process stdio still works.
+- The relay connects to the address the port was published on. A wildcard
+  binding (`0.0.0.0` or `::`) is reached on the guest loopback. A port bound to
+  several specific addresses uses an IPv4 loopback address first, then `::1`,
+  then the lowest other address.
+- The relay is a `bash` script: `bash` opens the connection (`/dev/tcp`), one
+  `socat -u` copies stdin to it and shuts down its sending side at the
+  client's EOF, and another copies it to stdout. The script exits when the
+  server-to-client copy ends. The runtime ends the host's output pipe only
+  when the process exits, not when the guest closes stdout, so the relay has
+  to exit when the server closes. A single `socat` cannot do both: it either
+  waits for both directions, holding a close-delimited reply open while the
+  client keeps writing, or exits a timeout after the first EOF, cutting off
+  the reply to a client that half-closed. The client-disconnect check ends
+  the relay when the client goes away; its trap stops both copies.
 - A TCP client sends the same FIN for a full close as for a half-close, so the
   zero-length `send` check cannot tell them apart at first. Accepted port
   connections enable TCP keepalive (10 second idle, three 5 second probes). A

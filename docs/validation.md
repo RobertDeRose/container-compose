@@ -61,8 +61,10 @@ machine. Record `container system status --format json`, including server commit
   program keeps it. Stop the container and confirm the host listener closes.
   Confirm the guest runs exactly one port watcher.
 - Against a published port whose server stays silent, close a client and
-  confirm its guest `socat` relay exits within about two minutes. Half-close a
-  client instead and confirm the relay stays open.
+  confirm its guest relay exits within about two minutes. Half-close a
+  client instead and confirm the relay stays open. Confirm a server that
+  replies and closes ends the client's read while the client keeps its
+  writing side open, including for a port published only on `::1`.
 - Reinstall the plugin and run `--socket-path` while a `logs -f` stream is open.
   Confirm the new forwarder takes over the socket and ports and the stream
   continues until the old forwarder exits.

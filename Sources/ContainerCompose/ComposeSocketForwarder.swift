@@ -4,7 +4,6 @@
 import ContainerAPIClient
 import ContainerResource
 import ContainerizationError
-import ContainerizationExtras
 import ContainerizationOS
 import Darwin
 import Foundation
@@ -303,7 +302,7 @@ final class ComposeSocketForwarder: @unchecked Sendable {
         await monitor.value
         // Output written before exit is still in the pipe. Deliver it, but do
         // not let a pipe the runtime has not closed hold the client open.
-        _ = try? await Timeout.run(for: Self.outputDrainTimeout) { await guestToClient.value }
+        _ = await Self.completes(guestToClient, within: Self.outputDrainTimeout)
         // Wakes the client-to-guest copy and ends the client's stream.
         _ = shutdown(connection, SHUT_RDWR)
         await clientToGuest.value
@@ -347,6 +346,24 @@ final class ComposeSocketForwarder: @unchecked Sendable {
                     return .writeFailed
                 }
                 offset += written
+            }
+        }
+    }
+
+    /// Waits for `task` for at most `timeout`, and returns whether it finished.
+    /// Unlike `Timeout.run`, whose task group waits for its operation even
+    /// after the deadline, this returns at the deadline while a blocked copy
+    /// (which ignores cancellation) keeps running.
+    static func completes(_ task: Task<Void, Never>, within timeout: Duration) async -> Bool {
+        let once = ComposeResumeOnce()
+        return await withCheckedContinuation { continuation in
+            Task {
+                await task.value
+                once.resume(continuation, returning: true)
+            }
+            Task {
+                try? await Task.sleep(for: timeout)
+                once.resume(continuation, returning: false)
             }
         }
     }
@@ -428,6 +445,22 @@ final class ComposeSocketForwarder: @unchecked Sendable {
 
 /// A pipe whose guest end is transferred to the runtime and whose other end
 /// this process owns as a raw descriptor.
+/// Resumes a continuation from whichever of several tasks gets there first.
+final class ComposeResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+
+    func resume<T: Sendable>(_ continuation: CheckedContinuation<T, Never>, returning value: T) {
+        let first = lock.withLock {
+            defer { resumed = true }
+            return !resumed
+        }
+        if first {
+            continuation.resume(returning: value)
+        }
+    }
+}
+
 final class ComposeRelayPipe: @unchecked Sendable {
     private var readEnd: Int32
     private var writeEnd: Int32

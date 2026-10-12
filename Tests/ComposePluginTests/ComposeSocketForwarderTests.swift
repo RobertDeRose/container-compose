@@ -177,6 +177,18 @@ struct ComposeSocketForwarderTests {
     }
 
     @Test
+    func completesReturnsAtTheDeadlineForAnUncancellableTask() async throws {
+        let blocked = Task {
+            _ = await ComposeSocketForwarder.onThread { usleep(2_000_000) }
+        }
+        let started = ContinuousClock.now
+        #expect(await !ComposeSocketForwarder.completes(blocked, within: .milliseconds(100)))
+        #expect(ContinuousClock.now - started < .seconds(1))
+
+        #expect(await ComposeSocketForwarder.completes(Task {}, within: .seconds(5)))
+    }
+
+    @Test
     func pumpCopiesUntilEndOfInput() throws {
         var source: [Int32] = [0, 0]
         var destination: [Int32] = [0, 0]
