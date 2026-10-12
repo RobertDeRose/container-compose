@@ -330,13 +330,16 @@ final class ComposePortListener: @unchecked Sendable {
     let port: UInt16
     private let descriptors: [Int32]
     private let sources: [DispatchSourceRead]
+    /// Left by each source's cancel handler once its socket is closed.
+    private let cancelled: DispatchGroup
     private let lock = NSLock()
     private var closed = false
 
-    private init(port: UInt16, descriptors: [Int32], sources: [DispatchSourceRead]) {
+    private init(port: UInt16, descriptors: [Int32], sources: [DispatchSourceRead], cancelled: DispatchGroup) {
         self.port = port
         self.descriptors = descriptors
         self.sources = sources
+        self.cancelled = cancelled
     }
 
     /// Binds 127.0.0.1 and, when available, ::1. Fails if 127.0.0.1 is taken.
@@ -361,6 +364,7 @@ final class ComposePortListener: @unchecked Sendable {
         }
         let loopbackOnly = wildcard
         let queue = DispatchQueue(label: "container.compose.port.\(port)")
+        let cancelled = DispatchGroup()
         let sources = descriptors.map { descriptor in
             let source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: queue)
             source.setEventHandler {
@@ -372,21 +376,29 @@ final class ComposePortListener: @unchecked Sendable {
                     onAccept(connection)
                 }
             }
-            source.setCancelHandler { _ = Darwin.close(descriptor) }
+            cancelled.enter()
+            source.setCancelHandler {
+                _ = Darwin.close(descriptor)
+                cancelled.leave()
+            }
             source.resume()
             return source
         }
-        return ComposePortListener(port: port, descriptors: descriptors, sources: sources)
+        return ComposePortListener(port: port, descriptors: descriptors, sources: sources, cancelled: cancelled)
     }
 
+    /// Stops listening and returns once the sockets are closed, so the port
+    /// can be bound again immediately. Never call it from the accept queue.
     func close() {
-        lock.withLock {
-            guard !closed else { return }
-            closed = true
-            for source in sources {
-                source.cancel()
-            }
+        let first = lock.withLock {
+            defer { closed = true }
+            return !closed
         }
+        guard first else { return }
+        for source in sources {
+            source.cancel()
+        }
+        cancelled.wait()
     }
 
     static func isLoopbackPeer(_ connection: Int32) -> Bool {
