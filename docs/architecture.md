@@ -11,7 +11,8 @@ Normal flow:
 1. Read the running host's app/install roots and plugin configuration.
 2. Acquire the plugin initialization lock.
 3. Inspect `compose`; refuse ambiguous ownership or a stale local record.
-4. On first use, build/fetch the guest image and create a native machine.
+4. On first use, create a native machine from the pinned guest image, which the
+   host pulls from GHCR.
 5. Boot through the existing machine API; perform one-time user initialization
    only for a machine created by this invocation.
 6. Establish or verify the plugin's guest ownership token.

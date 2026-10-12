@@ -24,21 +24,23 @@ subject to that host's requirements. Build and operate the plugin as your normal
 login user, not as root. The installer requests elevated privileges only for
 copying files into a protected installation prefix.
 
-The default guest image is built with the host's existing `container build`.
-First use requires its builder and access to the pinned Debian/Docker package
-repositories. Existing images and machines are reused. A prebuilt compatible
-image can be selected with `CONTAINER_COMPOSE_MACHINE_IMAGE`.
-
-The `Machine image` GitHub Actions workflow publishes the same image for
-`linux/arm64` to `ghcr.io/<owner>/container-compose-machine`. It runs on pushes
-to `main` that change `Sources/ContainerCompose/Resources` (tagged `edge`), on
-`v*` tags (tagged with the version), and manually for any branch. Every image is
-also tagged `sha-<commit>`, and the run summary prints the digest to pin, for
-example:
+The guest image is built from `machine-image/` and published for `linux/arm64`
+to `ghcr.io/robertderose/container-compose-machine`. The plugin pins its default
+by digest (`ComposeConfiguration.defaultImage`), and the host pulls it when the
+machine is first created. Existing images and machines are reused. Another
+compatible image can be selected with `CONTAINER_COMPOSE_MACHINE_IMAGE`, for
+example one built locally:
 
 ```bash
-export CONTAINER_COMPOSE_MACHINE_IMAGE=ghcr.io/<owner>/container-compose-machine@sha256:<digest>
+container build --file machine-image/Containerfile --tag compose-machine:dev machine-image
+export CONTAINER_COMPOSE_MACHINE_IMAGE=compose-machine:dev
 ```
+
+The `Machine image` GitHub Actions workflow publishes the image. It runs on
+pushes to `main` that change `machine-image/` (tagged `edge`), on `v*` tags
+(tagged with the version), and manually for any branch. Every image is also
+tagged `sha-<commit>`, and the run summary prints the digest. After changing
+`machine-image/`, publish it and update the pinned digest.
 
 ## Build and install
 
@@ -49,17 +51,13 @@ make install
 container compose --help
 ```
 
-`make install` builds and stages the executable and guest resources, asks the
+`make install` builds and stages the executable, asks the
 running host for its installation root, and installs only:
 
 ```text
 <install-root>/libexec/container-plugins/compose/
 ├── config.toml
-├── bin/compose
-└── resources/
-    ├── Containerfile
-    ├── container-compose-idle-shutdown
-    └── container-compose-idle-shutdown.service
+└── bin/compose
 ```
 
 The external plugin loader discovers this layout. No daemon registration or
@@ -84,8 +82,8 @@ reviewing an upgrade, replace an installation owned by this repository with:
 make install REPLACE=1
 ```
 
-To produce an archive containing the executable, manifest, licenses, and guest
-resources, run `make package`. The archive is architecture-specific; it is not a
+To produce an archive containing the executable, manifest, and licenses, run
+`make package`. The archive is architecture-specific; it is not a
 universal binary. Local builds are ad-hoc signed by default. Setting
 `CODE_SIGN_IDENTITY` changes signing; notarization and release hosting are not
 configured. A source bundle is not a prebuilt installer.
@@ -265,7 +263,9 @@ rather than silently changing daemon state.
 ## Repository layout
 
 `Sources/ContainerCompose` owns the command, machine orchestration, environment
-policy, resources, and a small client compatibility layer. `Sources/ComposeSupport`
+policy, the Docker socket and port forwarder, and a small client compatibility
+layer. `machine-image` holds the guest image's Containerfile and idle-shutdown
+service. `Sources/ComposeSupport`
 contains portable identity storage and cancellable callback waiting. Apple client
 libraries remain external Swift package dependencies.
 

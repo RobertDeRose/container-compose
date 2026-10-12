@@ -63,8 +63,7 @@ struct ComposeMachineManager: Sendable {
         let pluginConfiguration: ComposeConfiguration = try await ConfigurationLoader.loadForPlugin(
             configurationFiles: configurationFiles
         )
-        let customImage = ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_MACHINE_IMAGE"]
-        let image = customImage ?? ComposeConfiguration.defaultImage
+        let image = ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_MACHINE_IMAGE"] ?? ComposeConfiguration.defaultImage
         guard ComposeConfiguration.isValidImage(image) else {
             throw ContainerizationError(
                 .invalidArgument,
@@ -89,10 +88,8 @@ struct ComposeMachineManager: Sendable {
         let store = OwnershipStore(appRoot: health.appRoot)
         let (ownership, created) = try await ensureMachine(
             image: image,
-            customImage: customImage != nil,
             configuration: pluginConfiguration,
             systemConfiguration: systemConfiguration,
-            health: health,
             store: store,
             log: log
         )
@@ -135,10 +132,8 @@ struct ComposeMachineManager: Sendable {
 
     private func ensureMachine(
         image: String,
-        customImage: Bool,
         configuration: ComposeConfiguration,
         systemConfiguration: ContainerSystemConfig,
-        health: SystemHealth,
         store: OwnershipStore,
         log: Logger
     ) async throws -> (OwnershipRecord, Bool) {
@@ -165,17 +160,6 @@ struct ComposeMachineManager: Sendable {
                 .invalidState,
                 message: "Compose ownership record exists but the machine is missing; refusing automatic recreation. See docs/migration.md"
             )
-        }
-
-        if !customImage {
-            let imageAvailable = try await isImageAvailable(
-                image: image,
-                systemConfiguration: systemConfiguration
-            )
-            if !imageAvailable {
-                let builder = try ComposeMachineImageBuilder.make(health: health)
-                try await builder.build(image: image, log: log)
-            }
         }
 
         let machineConfiguration: MachineConfiguration
@@ -223,21 +207,6 @@ struct ComposeMachineManager: Sendable {
         let snapshot = try await machineClient.inspect(id: Self.machineID)
         log.info("Created Compose machine", metadata: ["id": "\(Self.machineID)"])
         return (ComposeMachineOwnership.record(for: snapshot), true)
-    }
-
-    private func isImageAvailable(
-        image: String,
-        systemConfiguration: ContainerSystemConfig
-    ) async throws -> Bool {
-        do {
-            _ = try await ClientImage.get(
-                reference: image,
-                containerSystemConfig: systemConfiguration
-            )
-            return true
-        } catch let error as ContainerizationError where error.isCode(.notFound) {
-            return false
-        }
     }
 
     private func bootMachine(newlyCreated: Bool, log: Logger) async throws -> MachineSnapshot {

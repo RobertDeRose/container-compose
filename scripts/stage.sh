@@ -5,12 +5,10 @@ cd "$(dirname "$0")/.."
 configuration=${BUILD_CONFIGURATION:-release}
 bin_dir=$(swift build -c "$configuration" --show-bin-path)
 stage="$PWD/dist/staging/compose"
-mkdir -p "$stage/bin" "$stage/resources"
+rm -rf "$stage"
+mkdir -p "$stage/bin"
 install -m 0755 "$bin_dir/compose" "$stage/bin/compose"
 install -m 0644 config.toml LICENSE NOTICE.md "$stage/"
-install -m 0644 Sources/ContainerCompose/Resources/Containerfile \
-    Sources/ContainerCompose/Resources/container-compose-idle-shutdown.service "$stage/resources/"
-install -m 0755 Sources/ContainerCompose/Resources/container-compose-idle-shutdown "$stage/resources/"
 printf '%s\n' 'container-compose external CLI plugin' > "$stage/.container-compose-plugin"
 codesign --force --sign "${CODE_SIGN_IDENTITY:--}" --timestamp=none "$stage/bin/compose"
 printf '%s\n' "$stage"

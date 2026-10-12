@@ -98,7 +98,7 @@ struct ComposeIdleShutdownTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let script = root.appendingPathComponent(
-            "Sources/ContainerCompose/Resources/container-compose-idle-shutdown"
+            "machine-image/container-compose-idle-shutdown"
         )
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("compose-idle-shutdown-\(UUID().uuidString)")

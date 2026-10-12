@@ -43,7 +43,7 @@ orphan-reconciliation implementation from the feature branch.
 
 ## Updates and removal
 
-Replacing the installed executable/resources leaves the persistent machine,
+Replacing the installed executable leaves the persistent machine,
 Docker packages, guest ownership marker, and plugin state unchanged. New CPU or
 memory defaults do not override existing native machine configuration.
 

@@ -52,7 +52,8 @@ struct MachineConfigurationTests {
 
     @Test
     func defaultComposeImageIsAccepted() {
-        #expect(ComposeConfiguration.defaultImage == "container-compose-machine:local")
+        // Pinned by digest so every new machine gets the image CI published.
+        #expect(ComposeConfiguration.defaultImage.hasPrefix("ghcr.io/robertderose/container-compose-machine@sha256:"))
         #expect(ComposeConfiguration.isValidImage(ComposeConfiguration.defaultImage))
     }
 
@@ -66,58 +67,6 @@ struct MachineConfigurationTests {
     @Test
     func emptyComposeImageIsRejected() {
         #expect(!ComposeConfiguration.isValidImage(""))
-    }
-
-    @Test
-    func installedImageResourcesUseSiblingPluginResources() throws {
-        let root = URL(fileURLWithPath: "/tmp/compose-plugin")
-        let executable = FilePath(root.appendingPathComponent("bin/compose").path)
-        let resources = root.appendingPathComponent("resources")
-        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try Data().write(to: resources.appendingPathComponent("Containerfile"))
-        try Data().write(to: resources.appendingPathComponent("container-compose-idle-shutdown"))
-        try Data().write(to: resources.appendingPathComponent("container-compose-idle-shutdown.service"))
-
-        let found = try ComposeMachineImageResources.locate(
-            executablePath: executable,
-            mainResourceURL: nil,
-            moduleResourceURL: nil
-        )
-        #expect(found.directory.path == resources.path)
-    }
-
-    @Test
-    func missingImageResourceReportsRequiredFiles() throws {
-        let root = URL(fileURLWithPath: "/tmp/compose-missing-resources")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try Data().write(to: root.appendingPathComponent("Containerfile"))
-
-        #expect(throws: ContainerizationError.self) {
-            try ComposeMachineImageResources.locate(
-                executablePath: FilePath("/unrelated/compose"),
-                mainResourceURL: nil,
-                moduleResourceURL: root
-            )
-        }
-    }
-
-    @Test
-    func moduleResourcesCanBeInjectedForResolutionTests() throws {
-        let root = URL(fileURLWithPath: "/tmp/compose-module")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try Data().write(to: root.appendingPathComponent("Containerfile"))
-        try Data().write(to: root.appendingPathComponent("container-compose-idle-shutdown"))
-        try Data().write(to: root.appendingPathComponent("container-compose-idle-shutdown.service"))
-
-        let found = try ComposeMachineImageResources.locate(
-            executablePath: FilePath("/unrelated/compose"),
-            mainResourceURL: nil,
-            moduleResourceURL: root
-        )
-        #expect(found.directory.path == root.path)
     }
 
     @Test(arguments: [0, -1])

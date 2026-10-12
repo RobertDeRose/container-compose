@@ -102,26 +102,6 @@ struct ComposeProcessLifecycleTests {
         }
         #expect(await process.recordedSignals() == [SIGKILL])
     }
-
-    @Test(.timeLimit(.minutes(1)))
-    func cancellationEscalatesWhenBuildIgnoresTermination() async throws {
-        let task = Task {
-            try await ComposeMachineImageBuilder.CommandRunner().run(
-                executable: URL(fileURLWithPath: "/bin/sh"),
-                arguments: ["-c", "trap '' TERM; while :; do :; done"],
-                log: Logger(label: "compose-process-test")
-            )
-        }
-        try await Task.sleep(for: .milliseconds(200))
-        task.cancel()
-
-        do {
-            try await task.value
-            Issue.record("cancelled build unexpectedly succeeded")
-        } catch is CancellationError {
-            // Expected.
-        }
-    }
 }
 
 private actor MockClientProcess: ClientProcess {

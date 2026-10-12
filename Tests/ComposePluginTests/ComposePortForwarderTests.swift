@@ -93,9 +93,9 @@ struct ComposePortForwarderTests {
         #expect(throws: (any Error).self) {
             _ = try ComposePortListener.bind(port: port) { Darwin.close($0) }
         }
-        // The IPv4 half was released, not left bound.
-        let probe = try TCPServer(port: port)
-        probe.close()
+        // The IPv4 half was released, not left bound. Pass a PID that is
+        // never ours so this process's own sockets are listed.
+        #expect(!ComposeHostPorts.listeners(excluding: -1).contains(.init(address: "127.0.0.1", port: port)))
     }
 
     @Test
