@@ -128,7 +128,12 @@ loopback addresses.
   a Docker connection or a `container compose` invocation, which connects to
   the socket without sending anything once the machine is ready.
 - A watcher that cannot start or stops reporting for 75 seconds counts as a
-  failed check, as does an unreadable machine state. The listeners stay open
+  failed check, as does an unreadable machine state.
+- When the forwarder stops reading a watcher, it closes the watcher's stdin as
+  well as killing it, unless the watcher is known to have exited. The runtime
+  turns the closed pipe into EOF in the guest, and the watcher exits on that
+  EOF, so it ends even when a kill request cannot reach the runtime. A failed
+  wait for the watcher is not treated as its exit. The listeners stay open
   until three checks in a row fail or the machine is known to be stopped, so a
   transient error does not drop working forwards.
 - For each port it listens on `127.0.0.1` and `::1`, both or neither. When an

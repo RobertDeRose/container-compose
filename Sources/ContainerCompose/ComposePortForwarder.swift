@@ -42,9 +42,16 @@ final class ComposePortForwarder: @unchecked Sendable {
     static let heartbeatTimeout: Duration = .seconds(75)
 
     /// Prints `ports <address>/<port> ...` for the TCP `docker-proxy`
-    /// bindings at start, on every change, and every 30 seconds. It exits
-    /// when the forwarder stops reading.
+    /// bindings at start, on every change, and every 30 seconds. It exits at
+    /// EOF on stdin, which the runtime delivers when the forwarder closes its
+    /// end of the input pipe, even if a kill request cannot reach the
+    /// runtime. Background commands get `/dev/null` as stdin, so the original
+    /// stdin is passed through descriptor 3. SIGKILL, because an inherited
+    /// ignored SIGTERM would leave the watcher running.
     static let watchScript = """
+        exec 3<&0
+        { cat <&3 >/dev/null; kill -9 $$; } &
+        exec 3<&-
         scan() {
             for f in /proc/[0-9]*/cmdline; do
                 set -- $(tr '\\000' ' ' < "$f" 2>/dev/null)
@@ -262,15 +269,23 @@ final class ComposePortForwarder: @unchecked Sendable {
         let client = ComposeProcessClient()
         let process: any ClientProcess
         let reader: Int32
+        let lifeline: Int32
         do {
+            let input = try ComposeRelayPipe()
             let output = try ComposeRelayPipe()
             process = try await client.createProcess(
                 containerId: containerID,
                 processId: UUID().uuidString.lowercased(),
                 configuration: Self.watchConfiguration,
-                stdio: [nil, output.takeWriteEnd(), nil]
+                stdio: [input.takeReadEnd(), output.takeWriteEnd(), nil]
             )
-            try await process.start()
+            lifeline = input.takeOwnedEnd()
+            do {
+                try await process.start()
+            } catch {
+                _ = close(lifeline)
+                throw error
+            }
             reader = output.takeOwnedEnd()
         } catch {
             log.debug("Cannot start the published port watcher", metadata: ["error": "\(error)"])
@@ -288,6 +303,7 @@ final class ComposePortForwarder: @unchecked Sendable {
         enum End {
             case reports(Bool)
             case exited
+            case waitFailed
         }
         let reports = Self.lines(from: reader, timeout: Self.heartbeatTimeout)
         let reported = await withTaskGroup(of: End.self) { group in
@@ -301,18 +317,27 @@ final class ComposePortForwarder: @unchecked Sendable {
                 return .reports(reported)
             }
             group.addTask {
-                _ = try? await process.wait()
-                return .exited
+                do {
+                    _ = try await process.wait()
+                    return .exited
+                } catch {
+                    return .waitFailed
+                }
             }
-            // Either the reports ended (a stalled or closed watcher) or the
-            // watcher exited; end the other.
+            // The reports ended (a stalled or closed watcher), the watcher
+            // exited, or waiting for it failed. Unless it is known to have
+            // exited, stop it. Closing its stdin ends it even when the kill
+            // request cannot reach the runtime.
             var ends: [End] = []
             if let first = await group.next() {
                 ends.append(first)
-                if case .reports = first {
+                _ = close(lifeline)
+                let exited = if case .exited = first { true } else { false }
+                if !exited {
                     try? await process.kill(SIGKILL)
                 }
             }
+            // Ending the report stream also stops its reader thread.
             group.cancelAll()
             for await end in group {
                 ends.append(end)
@@ -323,26 +348,45 @@ final class ComposePortForwarder: @unchecked Sendable {
         return reported
     }
 
-    /// Reads lines on a dedicated thread until EOF, a read error, or no input
-    /// for `timeout`, then closes `descriptor`. Only that thread closes it, so
+    /// Reads lines on a dedicated thread until EOF, a read error, no input
+    /// for `timeout`, or the stream's termination (its consumer was
+    /// cancelled), then closes `descriptor`. Only that thread closes it, so
     /// its number cannot be reused while it is still being read.
     static func lines(from descriptor: Int32, timeout: Duration) -> AsyncStream<String> {
         AsyncStream { continuation in
+            // Termination closes the write end, which wakes the thread's poll.
+            var wake: [Int32] = [-1, -1]
+            guard pipe(&wake) == 0 else {
+                _ = close(descriptor)
+                continuation.finish()
+                return
+            }
+            for end in wake {
+                _ = fcntl(end, F_SETFD, FD_CLOEXEC)
+            }
+            let (wakeReader, wakeWriter) = (wake[0], wake[1])
+            continuation.onTermination = { _ in
+                _ = close(wakeWriter)
+            }
             Thread.detachNewThread {
                 defer {
                     _ = close(descriptor)
+                    _ = close(wakeReader)
                     continuation.finish()
                 }
                 let milliseconds = Int32(timeout.components.seconds * 1000)
                 var pending = [UInt8]()
                 var buffer = [UInt8](repeating: 0, count: 4096)
                 while true {
-                    var event = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
-                    let ready = poll(&event, 1, milliseconds)
+                    var events = [
+                        pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0),
+                        pollfd(fd: wakeReader, events: Int16(POLLIN), revents: 0),
+                    ]
+                    let ready = poll(&events, 2, milliseconds)
                     if ready < 0, errno == EINTR {
                         continue
                     }
-                    guard ready > 0 else {
+                    guard ready > 0, events[1].revents == 0 else {
                         return
                     }
                     let count = buffer.withUnsafeMutableBytes { read(descriptor, $0.baseAddress, $0.count) }

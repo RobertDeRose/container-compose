@@ -145,6 +145,7 @@ struct ComposeSocketForwarderTests {
     func peerClosedIgnoresHalfCloseButDetectsDisconnect() throws {
         var sockets: [Int32] = [0, 0]
         #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets) == 0)
+        closeOnExec(sockets)
         defer { close(sockets[0]) }
         var enabled: Int32 = 1
         setsockopt(sockets[0], SOL_SOCKET, SO_NOSIGPIPE, &enabled, socklen_t(MemoryLayout<Int32>.size))
@@ -160,12 +161,14 @@ struct ComposeSocketForwarderTests {
     func awaitRequestRejectsProbesAndLeavesRequestBytes() async throws {
         var probe: [Int32] = [0, 0]
         #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &probe) == 0)
+        closeOnExec(probe)
         defer { close(probe[0]) }
         close(probe[1])
         #expect(await !ComposeSocketForwarder.awaitRequest(probe[0]))
 
         var request: [Int32] = [0, 0]
         #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &request) == 0)
+        closeOnExec(request)
         defer {
             close(request[0])
             close(request[1])
@@ -193,7 +196,9 @@ struct ComposeSocketForwarderTests {
         var source: [Int32] = [0, 0]
         var destination: [Int32] = [0, 0]
         #expect(pipe(&source) == 0)
+        closeOnExec(source)
         #expect(pipe(&destination) == 0)
+        closeOnExec(destination)
         defer {
             close(source[0])
             close(destination[0])
@@ -215,7 +220,9 @@ struct ComposeSocketForwarderTests {
         var source: [Int32] = [0, 0]
         var destination: [Int32] = [0, 0]
         #expect(pipe(&source) == 0)
+        closeOnExec(source)
         #expect(pipe(&destination) == 0)
+        closeOnExec(destination)
         defer {
             close(source[0])
             close(destination[1])
@@ -337,5 +344,13 @@ private actor Counter {
 
     func increment() {
         value += 1
+    }
+}
+
+/// Keeps test descriptors out of processes that concurrent tests spawn, where
+/// an inherited end would hold off the EOF or EPIPE a test waits for.
+private func closeOnExec(_ descriptors: [Int32]) {
+    for descriptor in descriptors {
+        _ = fcntl(descriptor, F_SETFD, FD_CLOEXEC)
     }
 }
