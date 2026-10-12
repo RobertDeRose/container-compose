@@ -70,8 +70,7 @@ The installer refuses to overwrite an existing plugin by default. After
 reviewing an upgrade, replace an installation owned by this repository with:
 
 ```bash
-make stage
-./scripts/install.sh --replace
+make install REPLACE=1
 ```
 
 To produce an archive containing the executable, manifest, licenses, and guest
