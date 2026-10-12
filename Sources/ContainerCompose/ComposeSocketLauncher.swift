@@ -97,7 +97,7 @@ enum ComposeSocketLauncher {
             Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF)
         )
 
-        let arguments = [executablePath, serveArgument].map { strdup($0) }
+        let arguments: [UnsafeMutablePointer<CChar>?] = [strdup(executablePath), strdup(serveArgument)]
         defer {
             for argument in arguments {
                 free(argument)
