@@ -210,7 +210,11 @@ struct ComposeMachineManager: Sendable {
     }
 
     private func bootMachine(newlyCreated: Bool, log: Logger) async throws -> MachineSnapshot {
-        let snapshot = try await machineClient.boot(id: Self.machineID, dynamicEnv: [:])
+        let booted = try await machineClient.boot(id: Self.machineID, dynamicEnv: [:])
+        // Booting a running machine returns the state cached when it started,
+        // which predates the user initialization done by its creator. Inspect
+        // reads the marker from the bundle.
+        let snapshot = booted.initialized ? booted : try await machineClient.inspect(id: Self.machineID)
         guard !snapshot.initialized else { return snapshot }
         guard newlyCreated else {
             throw ContainerizationError(.invalidState, message: "owned Compose machine has lost its initialization marker; refusing reprovisioning")
