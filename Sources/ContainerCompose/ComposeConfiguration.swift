@@ -8,7 +8,10 @@ import Foundation
 /// Configuration scoped to the Compose plugin.
 struct ComposeConfiguration: LoadablePluginConfiguration {
     static let pluginId = "compose"
-    static let defaultImage = "container-compose-machine:local"
+    /// Built from `machine-image/` by the Machine image workflow. Update this
+    /// pin after the workflow publishes a changed image.
+    static let defaultImage =
+        "ghcr.io/robertderose/container-compose-machine@sha256:e9c55ee12f73e56c36c18c66134f3aa385d4c7227052d1d78b8eda405bf24d02"
 
     static func isValidImage(_ image: String) -> Bool {
         guard !image.isEmpty else { return false }

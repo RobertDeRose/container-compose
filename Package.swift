@@ -29,7 +29,7 @@ let appleProducts: [Target.Dependency] = [
 ]
 let products: [Product] = [.executable(name: "compose", targets: ["compose"])]
 let platformTargets: [Target] = [
-    .target(name: "ContainerCompose", dependencies: appleProducts + ["ComposeSupport"], resources: [.copy("Resources")]),
+    .target(name: "ContainerCompose", dependencies: appleProducts + ["ComposeSupport"]),
     .executableTarget(name: "compose", dependencies: ["ContainerCompose"], path: "Sources/ComposePlugin"),
     .testTarget(name: "ComposePluginTests", dependencies: appleProducts + ["ContainerCompose", "ComposeSupport"]),
 ]
