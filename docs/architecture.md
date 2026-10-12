@@ -70,9 +70,80 @@ A crash between creation and writing both markers leaves an ambiguous machine.
 The plugin refuses automatic repair/adoption instead of inventing a second
 machine lifecycle/recovery engine.
 
+## Host Docker socket
+
+The original branch had the machine service publish the guest socket at
+`~/.local/run/docker.socket` through a `dockerSocketPath` boot setting. Upstream
+machines cannot publish sockets, so the plugin serves the same path itself:
+
+1. `--socket-path` connects to the socket. If nothing listens, or the owner
+   recorded in `docker.socket.lock` is a different plugin build, it spawns
+   `compose --serve-socket` in a new session and waits for the socket to accept.
+   It never contacts the API server.
+2. The forwarder holds an exclusive `flock` on `docker.socket.lock` for its
+   lifetime, so concurrent shells start one instance. Only the lock holder
+   removes a stale socket, and it refuses to replace a regular file or a socket
+   that something else is listening on.
+3. For each connection it creates a guest process, `docker system dial-stdio`,
+   through the existing `containerCreateProcess` route, using a new XPC
+   connection so an API server restart does not break later connections. The
+   guest relay talks to `/etc/docker/docker.sock`.
+4. The relay's stdin and stdout are pipes, and the forwarder copies between
+   them and the client socket. Passing the socket itself as stdio does not
+   work: the runtime ends guest stdin when a pipe closes, but not when a client
+   half-closes a socket. Docker clients half-close hijacked streams, and `exec`
+   without `-i` does so immediately and then waits for the stream to end, so
+   it would hang. Client EOF closes the stdin pipe. Output EOF shuts down the
+   client's read side.
+5. The backing container ID is cached. The first connection, or a retry after a
+   failed process creation (the machine stopped or rebooted), runs the normal
+   initialization path once for all waiting connections.
+6. A zero-length `send` on the client socket fails with `EPIPE` only after the
+   client closes both directions. The forwarder checks this every second and
+   sends SIGTERM to the guest relay, which would otherwise stay open on a
+   quiet stream such as `events`. A half-close is left alone.
+7. On SIGTERM the forwarder removes its socket and releases the lock, so a
+   replacement can start at once, then exits when its connections finish.
+
+## Published ports on localhost
+
+The same forwarder process mirrors published TCP ports onto the host's
+loopback addresses.
+
+- Every two seconds it pings the API server and inspects the `compose` machine.
+  If the machine is running and matches the ownership record, it runs a guest
+  script that lists `-host-ip`/`-host-port` from each TCP `docker-proxy`
+  command line. This never boots the machine and never opens a Docker client
+  connection, so it does not delay idle shutdown.
+- For each port it listens on `127.0.0.1` and `::1`, both or neither. When an
+  unprivileged bind below 1024 is refused, it binds the wildcard address and
+  closes connections from non-loopback peers.
+- Listeners use `SO_REUSEADDR` so a restarted forwarder can rebind ports with
+  recently closed connections. On macOS that also lets a specific-address bind
+  overlap another socket's wildcard bind (or the reverse), silently splitting
+  `localhost` traffic. The kernel refuses the overlap when the other socket
+  belongs to a different user. For this user's other processes, the forwarder
+  lists listening sockets with `libproc` (`proc_listpids`, `proc_pidfdinfo`)
+  and skips any port held at a loopback-covering address. It never probes by
+  connecting, which the other program would see. `netstat` is not used: the
+  kernel filters the system socket table for processes without Apple's private
+  network-statistics entitlement, and children of an ad-hoc-signed process get
+  an empty table.
+- Skipped ports are retried every poll and logged once.
+- Every connection goes through a per-connection guest relay,
+  `socat -t 86400 STDIO TCP:127.0.0.1:<port>`, with pipe stdio, bridged the
+  same way as the Docker socket. Every published port listens on the guest
+  loopback, whichever address it was bound to. The machine's address is not
+  used: a host firewall can block the vmnet bridge while process stdio still
+  works. The long `-t` keeps the relay open after a client half-closes, so the
+  reply still arrives; the client-disconnect check ends it otherwise.
+- Port listeners close when draining starts, so a replacement forwarder can
+  bind them at once.
+
 ## Deliberate differences from the original branch
 
-- No host Docker socket publication or external `DOCKER_HOST` endpoint.
+- The host Docker socket is served by a per-user forwarder started by
+  `--socket-path`, not published by the machine service. See below.
 - No `project.compose.machine` fallback in the main DNS handler.
 - No promise that an auxiliary machine cannot become the first/default machine.
 - No host-wide ownership labels or daemon startup orphan reconciliation.

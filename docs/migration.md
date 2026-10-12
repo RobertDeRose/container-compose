@@ -47,7 +47,16 @@ Replacing the installed executable/resources leaves the persistent machine,
 Docker packages, guest ownership marker, and plugin state unchanged. New CPU or
 memory defaults do not override existing native machine configuration.
 
-To remove only the plugin, first obtain its exact installation directory with
-`container compose --install-path` and remove that directory. Do not remove the
+To remove only the plugin, first stop its background forwarder, which serves
+the Docker socket and the published ports on `localhost`:
+
+```bash
+kill "$(head -1 ~/.local/run/docker.socket.lock)"
+```
+
+Then obtain its exact installation directory with
+`container compose --install-path` and remove that directory. Remove the
+`DOCKER_HOST="$(container compose --socket-path)"` line from your shell profile,
+or new shells will fail to start the forwarder. Do not remove the
 machine or plugin state unless data removal is intentional. A later reinstall
 can reuse the existing markers and machine.

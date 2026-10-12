@@ -43,7 +43,7 @@ struct ComposeEnvironmentTests {
     func composeHelpUsesHostCommandAndSubcommandArgument() {
         #expect(
             ComposeCommand.usageString(for: ComposeCommand.self)
-                == "container compose [--completions <bash|zsh|fish> | --install-path | <subcommand> ...]"
+                == "container compose [--completions <bash|zsh|fish> | --install-path | --socket-path | <subcommand> ...]"
         )
     }
 

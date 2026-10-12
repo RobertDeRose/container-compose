@@ -41,7 +41,7 @@ enum ComposeCompletionProvider {
     static let commands = "config convert cp create down events images kill logs ls pause port ps pull push restart rm run start stop top unpause up version watch"
     static let composeOptions =
         "--all-resources --ansi --compatibility --dry-run --env-file --file --parallel --profile --progress --project-directory --project-name --quiet-pull --verbose"
-    static let pluginOptions = "--install-path --completions"
+    static let pluginOptions = "--install-path --socket-path --completions"
 
     private static let bash = """
         # container compose completion (generated for the pinned Docker Compose CLI)

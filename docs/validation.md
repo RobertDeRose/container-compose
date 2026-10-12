@@ -46,6 +46,20 @@ machine. Record `container system status --format json`, including server commit
 - From a home-directory project, run the first `compose up -d` using an uncached
   guest image. Inspect the native machine, guest Docker version, and readiness
   diagnostics. Confirm normal published-port access through the machine address.
+- With the machine stopped, run `container compose --socket-path` and confirm it
+  prints the endpoint quickly without booting the machine. Through that socket,
+  run `docker version` (which boots the machine), `docker run`, `docker exec`
+  without `-i`, `docker exec -i` with piped input, a TTY exec, and `docker build`.
+  Kill a `docker logs -f` client and confirm its guest `dial-stdio` relay exits.
+  Restart the native services and confirm the next Docker command succeeds.
+- Publish ports on `127.0.0.1` and on all interfaces, including one below 1024,
+  and confirm each answers on `127.0.0.1` and `::1` within a few seconds.
+  Publish a port that another program of the same user already listens on (for
+  example AirPlay's `5000`) and confirm it is skipped, logged once, and the other
+  program keeps it. Stop the container and confirm the host listener closes.
+- Reinstall the plugin and run `--socket-path` while a `logs -f` stream is open.
+  Confirm the new forwarder takes over the socket and ports and the stream
+  continues until the old forwarder exits.
 - Run a second invocation concurrently with the first. Confirm exactly one machine
   and one ownership record, with no adoption after a native name collision.
 - Exercise `exec api python --help`, `run db psql -h db`, `exec -T`, stdin-fed
