@@ -4,7 +4,7 @@ on:
     branches: [main]
     tags: ['v*']
     paths:
-      - Sources/ContainerCompose/Resources/**
+      - machine-image/**
       - .github/workflows/machine-image.yml
   workflow_dispatch:
 permissions:
@@ -42,14 +42,14 @@ jobs:
           docker buildx create --use
           docker buildx build \
             --platform linux/arm64 \
-            --file Sources/ContainerCompose/Resources/Containerfile \
+            --file machine-image/Containerfile \
             --label "org.opencontainers.image.source=$SOURCE" \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             --label "org.opencontainers.image.description=Persistent Docker machine for the container compose plugin" \
             "${tags[@]}" \
             --metadata-file metadata.json \
             --push \
-            Sources/ContainerCompose/Resources
+            machine-image
           digest=$(jq -r '."containerimage.digest"' metadata.json)
           {
             echo "### Published $image"

@@ -27,12 +27,12 @@ make stage
 ```
 
 Commit the generated root `Package.resolved` after successful resolution and
-record the compiler and host versions before a release. The supplied guest
-Containerfile uses pinned live package repositories; test a genuinely fresh
-image build, not only reuse of a cached image.
+record the compiler and host versions before a release. The guest
+Containerfile uses pinned live package repositories; confirm the `Machine image`
+workflow still builds it, and that the pinned digest matches a published image.
 
-`ComposePluginTests` includes argument forwarding, environment policy, resource
-lookup, configuration validation, capture bounds/timeouts, and signal/cancellation
+`ComposePluginTests` includes argument forwarding, environment policy,
+configuration validation, the socket and port forwarder, capture bounds/timeouts, and signal/cancellation
 regressions. `ComposeSupportTests` covers callback waits, ownership records, and
 the actual idle policy with deterministic command fixtures.
 
@@ -43,8 +43,8 @@ machine. Record `container system status --format json`, including server commit
 
 - Confirm installation under the reported external directory, root help discovery,
   `container compose --help`, and `--completions` without creating a machine.
-- From a home-directory project, run the first `compose up -d` using an uncached
-  guest image. Inspect the native machine, guest Docker version, and readiness
+- From a home-directory project, run the first `compose up -d` without the guest
+  image in the local image store, so it is pulled. Inspect the native machine, guest Docker version, and readiness
   diagnostics. Confirm normal published-port access through the machine address.
 - With the machine stopped, run `container compose --socket-path` and confirm it
   prints the endpoint quickly without booting the machine. Through that socket,

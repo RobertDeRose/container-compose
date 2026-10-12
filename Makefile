@@ -25,4 +25,4 @@ package: stage
 lint:
 	$(SWIFT) format lint --recursive Sources Tests
 	for script in scripts/*.sh; do bash -n "$$script"; done
-	sh -n Sources/ContainerCompose/Resources/container-compose-idle-shutdown
+	sh -n machine-image/container-compose-idle-shutdown
