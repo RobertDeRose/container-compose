@@ -1,8 +1,15 @@
 #!/bin/bash
 # Install only this CLI plugin. Never change host binaries, daemons, or VM data.
 set -euo pipefail
-cd "$(dirname "$0")/.."
-stage=${COMPOSE_STAGING_DIR:-"$PWD/dist/staging/compose"}
+script_dir=$(cd "$(dirname "$0")" && pwd)
+if [[ -f "$script_dir/.container-compose-plugin" ]]; then
+    # Running from an extracted release archive, which is the staged layout.
+    default_stage=$script_dir
+else
+    cd "$script_dir/.."
+    default_stage="$PWD/dist/staging/compose"
+fi
+stage=${COMPOSE_STAGING_DIR:-$default_stage}
 prefix=
 replace=false
 while (($#)); do
@@ -16,7 +23,7 @@ while (($#)); do
     esac
 done
 [[ -x "$stage/bin/compose" && -f "$stage/.container-compose-plugin" && -r "$stage/config.toml" ]] || {
-    echo 'Staged plugin is missing. Run make stage first, as your normal user.' >&2; exit 1;
+    echo 'Staged plugin is missing. Run make stage first, as your normal user, or run the installer from an extracted release archive.' >&2; exit 1;
 }
 if [[ -n $prefix ]]; then
     destination="${prefix%/}/libexec/container-plugins/compose"
@@ -57,6 +64,8 @@ cleanup() {
 }
 trap cleanup EXIT
 run_privileged cp -R "$stage/." "$temporary/"
+# The archive's copy of this installer is not part of the plugin.
+run_privileged rm -f "$temporary/install.sh"
 # Every directory must stay traversable by the login user once root owns it.
 run_privileged find "$temporary" -type d -exec chmod 0755 {} +
 if [[ -e $destination ]]; then

@@ -43,4 +43,17 @@ for directory in "$restricted_prefix/libexec" "$restricted_prefix/libexec/contai
     "$restricted_destination" "$restricted_destination/bin"; do
     [[ -n $(find "$directory" -maxdepth 0 -perm 0755) ]] || { echo "Installed directory $directory is not 0755." >&2; exit 1; }
 done
-printf '%s\n' 'Installer checks passed: spaces, install, replacement, foreign-plugin refusal, prefix validation, and umask.'
+# A release archive carries the installer, which then runs from the extracted
+# directory without the repository or COMPOSE_STAGING_DIR.
+extracted="$root/extracted/compose"
+mkdir -p "$extracted/bin"
+cp "$COMPOSE_STAGING_DIR/bin/compose" "$extracted/bin/compose"
+cp "$COMPOSE_STAGING_DIR/config.toml" "$extracted/config.toml"
+printf '%s\n' 'fixture' > "$extracted/.container-compose-plugin"
+cp scripts/install.sh "$extracted/install.sh"
+archive_prefix="$root/archive-prefix"
+(cd "$root" && env -u COMPOSE_STAGING_DIR "$extracted/install.sh" --prefix "$archive_prefix" >/dev/null)
+archive_destination="$archive_prefix/libexec/container-plugins/compose"
+[[ -x "$archive_destination/bin/compose" && -f "$archive_destination/config.toml" ]]
+[[ ! -e "$archive_destination/install.sh" ]] || { echo 'Installer copied itself into the plugin.' >&2; exit 1; }
+printf '%s\n' 'Installer checks passed: spaces, install, replacement, foreign-plugin refusal, prefix validation, umask, and release archive.'
