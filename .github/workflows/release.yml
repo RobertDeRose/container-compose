@@ -18,22 +18,22 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      # A tag pushed with the workflow token triggers nothing, so the release
-      # is made as the Robborg app when its secrets are set: its tag then
-      # starts the machine image workflow, which publishes the guest image
-      # under the same version. Without the secrets the release still
-      # happens, and the image tag has to be published by hand.
+      # Release tags must be pushed as Robborg to trigger the machine image
+      # workflow. The same token publishes the formula to the Homebrew tap.
       - id: app-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
         with:
           client-id: ${{ secrets.ROBBORG_CLIENT_ID }}
           private-key: ${{ secrets.ROBBORG_PRIVATE_KEY }}
-        continue-on-error: true
-      # The checkout keeps the workflow token: the v0.0.0 marker below must
-      # not trigger anything, and only semantic-release pushes as the app.
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            container-compose-plugin
+            homebrew-tap
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1; inherited from the source repository
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: lts/*
@@ -46,17 +46,22 @@ jobs:
         run: npm audit signatures
       # semantic-release counts releases from the latest tag. The first
       # release is measured from the root commit rather than defaulting to 1.0.0.
+      # Create this marker with the workflow token so it triggers no image run.
       - name: Ensure initial release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if git rev-parse -q --verify refs/tags/v0.0.0 >/dev/null; then
             exit 0
           fi
-          git tag v0.0.0 "$(git rev-list --max-parents=0 HEAD)"
-          git push origin v0.0.0
+          root_commit=$(git rev-list --max-parents=0 HEAD)
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref=refs/tags/v0.0.0 -f sha="$root_commit"
+          git tag v0.0.0 "$root_commit"
       # Derives the version from the commits, stamps it into the executable,
       # builds and packages it, tags the commit, and publishes the release
       # with the archive, its checksum, and generated notes (see package.json).
       - name: Release
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: npx semantic-release

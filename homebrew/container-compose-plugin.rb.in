@@ -1,0 +1,43 @@
+# Rendered by scripts/publish-homebrew.sh on each release and pushed to the
+# RobertDeRose/homebrew-tap repository. @VERSION@ and @SHA256@ are filled in.
+class ContainerComposePlugin < Formula
+  desc "Docker Compose as a plugin for Apple's container CLI"
+  homepage "https://github.com/RobertDeRose/container-compose-plugin"
+  url "https://github.com/RobertDeRose/container-compose-plugin/releases/download/v@VERSION@/container-compose-plugin-@VERSION@-darwin-arm64.tar.gz"
+  sha256 "@SHA256@"
+  version "@VERSION@"
+  license "Apache-2.0"
+
+  depends_on "container"
+  depends_on arch: :arm64
+  depends_on :macos
+
+  def install
+    # The archive is the installed plugin layout; keep it whole under libexec.
+    # The shipped installer is for installs outside Homebrew.
+    rm "install.sh"
+    libexec.install Dir["*"], ".container-compose-plugin"
+  end
+
+  # The host loads plugins only from the container formula's own install
+  # root, so link this formula's stable opt path into it.
+  def post_install
+    plugins = Formula["container"].opt_libexec/"container-plugins"
+    plugins.mkpath
+    link = plugins/"compose"
+    link.unlink if link.symlink?
+    link.make_symlink opt_libexec
+  end
+
+  def caveats
+    <<~EOS
+      The plugin is linked into the container formula's plugin directory,
+      which `brew upgrade container` replaces. After upgrading container, run:
+        brew postinstall container-compose-plugin
+    EOS
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{libexec}/bin/compose --version")
+  end
+end
