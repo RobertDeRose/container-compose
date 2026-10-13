@@ -35,7 +35,8 @@
       [
         "@semantic-release/exec",
         {
-          "prepareCmd": "./scripts/set-version.sh \"${nextRelease.version}\" && make package VERSION=\"${nextRelease.version}\""
+          "prepareCmd": "./scripts/set-version.sh \"${nextRelease.version}\" && make package VERSION=\"${nextRelease.version}\"",
+          "successCmd": "./scripts/publish-homebrew.sh \"${nextRelease.version}\""
         }
       ],
       [
