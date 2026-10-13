@@ -57,11 +57,9 @@ client of the host's public machine and process APIs.
 
 ## Install
 
-Every [GitHub release](https://github.com/RobertDeRose/container-compose-plugin/releases)
-carries `container-compose-plugin-<version>-darwin-arm64.tar.gz` and its SHA-256
-checksum. The archive holds the staged plugin and its installer. Whichever
-route below you take, the result is the same layout in the host's plugin
-directory:
+Pick the route that matches how you installed `container`. Each one ends
+with the same layout in the host's plugin directory, which the host's
+external plugin loader discovers on its own:
 
 ```text
 <install-root>/libexec/container-plugins/compose/
@@ -69,10 +67,58 @@ directory:
 └── bin/compose
 ```
 
-The host's external plugin loader discovers that directory on its own. No
-daemon is registered and no host service is replaced.
+No daemon is registered and no host service is replaced. The install root is
+wherever `container` itself lives, which is why the route depends on how it
+got there.
 
-### From a GitHub release
+### container from Homebrew
+
+```bash
+brew install RobertDeRose/tap/container-compose-plugin
+```
+
+The formula depends on Homebrew's `container` formula and links itself into
+that formula's plugin directory. `brew upgrade container` replaces that
+directory, so after upgrading `container` run
+`brew postinstall container-compose-plugin` to link the plugin again.
+
+### container from mise
+
+mise installs `container` into a versioned directory of its own, so the
+plugin goes there too, with no elevated privileges. Let mise keep both wired
+together by giving each tool a `postinstall` step:
+
+```toml
+# ~/.config/mise/config.toml
+[tools.container]
+version = "latest"
+# Reinstalls the plugin into a newly installed container, if it is present.
+postinstall = """
+if plugin=$(mise where github:RobertDeRose/container-compose-plugin 2>/dev/null); then
+    "$plugin/install.sh" --replace --prefix "$MISE_TOOL_INSTALL_PATH/Payload"
+fi
+"""
+
+[tools."github:RobertDeRose/container-compose-plugin"]
+version = "latest"
+depends = ["container"]
+postinstall = """
+"$MISE_TOOL_INSTALL_PATH/install.sh" --replace --prefix "$(mise where container)/Payload"
+"""
+```
+
+Then `mise install`. The plugin's step installs it into the current
+`container`; the `container` step reinstalls the plugin into a newly upgraded
+`container`, and does nothing when the plugin is not installed. Upgrading
+either tool with `mise upgrade` keeps them matched.
+
+### container from Apple's installer
+
+Apple's package installs under `/usr/local`, so the plugin directory is
+protected and the installer asks for elevated privileges. Every
+[GitHub release](https://github.com/RobertDeRose/container-compose-plugin/releases)
+carries `container-compose-plugin-<version>-darwin-arm64.tar.gz` and its
+SHA-256 checksum. The archive holds the plugin and its installer:
 
 ```bash
 gh release download --repo RobertDeRose/container-compose-plugin --pattern '*-darwin-arm64.tar.gz*'
@@ -89,21 +135,12 @@ saved by a browser carries the quarantine attribute and macOS refuses to run
 the executable in it. Download with `gh` or `curl`, or clear the attribute
 with `xattr -dr com.apple.quarantine compose` before installing.
 
-### With mise
-
-[mise](https://mise.jdx.dev) fetches the release through its GitHub backend,
-verifies the download against the digest GitHub reports, and keeps it
-current:
+The installer asks the running host for its install root. To name the root
+yourself, or when the host is not running:
 
 ```bash
-mise use --global github:RobertDeRose/container-compose-plugin
-"$(mise where github:RobertDeRose/container-compose-plugin)/install.sh"
+./compose/install.sh --prefix /usr/local
 ```
-
-mise puts the fetched layout under its own installs directory, and the host
-only loads plugins from its plugin directory, so the second command copies
-that layout there. After `mise upgrade github:RobertDeRose/container-compose-plugin`,
-run the installer again with `--replace`.
 
 ### From source
 
@@ -117,23 +154,18 @@ container compose --help
 
 `make install` builds the `compose` executable in release mode, stages it with
 its plugin manifest and licenses, and installs that layout the same way the
-release installer does.
-
-To choose the installation root yourself, with either installer:
-
-```bash
-make install PREFIX=/usr/local
-./compose/install.sh --prefix /usr/local
-```
+release installer does. `make install PREFIX=/usr/local` names the root.
 
 Do not assume `/usr/local`. The default reads the running host's reported root
-through `compose --install-path`, and a versioned package-manager prefix
-changes after a host upgrade, so reinstall after one.
+through `compose --install-path`, and a versioned prefix changes after a host
+upgrade, so reinstall after one; the Homebrew and mise routes above do that
+for you.
 
 ### Upgrade and uninstall
 
-The installer refuses to overwrite an existing plugin unless told to replace
-one that this project installed:
+Homebrew and mise upgrade the plugin like any other tool. The installer
+otherwise refuses to overwrite an existing plugin unless told to replace one
+that this project installed:
 
 ```bash
 ./compose/install.sh --replace     # from a newer release archive
@@ -142,9 +174,10 @@ make install REPLACE=1             # from source, after git pull
 
 Upgrading replaces only the plugin files. The machine, its Docker data, and
 the plugin's state are untouched. To uninstall, stop the background forwarder,
-then remove the directory that `container compose --install-path` prints.
-Removing the plugin does not delete the machine. See
-[operations and recovery](docs/operations.md) for the full procedure.
+then remove the directory that `container compose --install-path` prints, or
+`brew uninstall container-compose-plugin`. Removing the plugin does not
+delete the machine. See [operations and recovery](docs/operations.md) for the
+full procedure.
 
 ### Shell completions
 
@@ -427,12 +460,16 @@ and publishes a GitHub release with the archive, its checksum, and notes
 generated from the commits. The checked-in version stays a development marker.
 Release builds are ad-hoc signed; notarization is not configured.
 
-The release is made as the Robborg GitHub App when the `ROBBORG_CLIENT_ID`
-and `ROBBORG_PRIVATE_KEY` secrets are set. A tag pushed with the workflow
+The release requires the Robborg GitHub App and the `ROBBORG_CLIENT_ID`
+and `ROBBORG_PRIVATE_KEY` secrets. A tag pushed with the workflow
 token would trigger nothing; the app's tag starts the machine image
 workflow, which tags the guest image the released plugin pins with the same
 version, so `container-compose-machine:<version>` is exactly what that
-release installs. Dependency updates come from Dependabot.
+release installs. The same step renders `homebrew/container-compose-plugin.rb.in`
+with the version and checksum and pushes it to the
+[RobertDeRose/homebrew-tap](https://github.com/RobertDeRose/homebrew-tap)
+repository. The app must be installed on both repositories, and the release
+token is scoped to both. Dependency updates come from Dependabot.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the conventions pull requests are
 expected to follow.

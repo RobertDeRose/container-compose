@@ -51,6 +51,8 @@ procedures. The plugin does not reconcile the machine service's state.
 
 ## Upgrading
 
+With Homebrew or mise, upgrade the plugin like any other tool; see the
+README's install routes for what happens when `container` itself is upgraded.
 From a newer release archive, or from source:
 
 ```bash
