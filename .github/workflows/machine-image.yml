@@ -16,6 +16,8 @@ concurrency:
 jobs:
   publish:
     # The machine runs on Apple silicon, so only linux/arm64 is published.
+    # A release tag does not rebuild: the image the released plugin pins by
+    # digest is tagged with the release version, so the two always match.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
@@ -25,18 +27,31 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ACTOR: ${{ github.actor }}
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+      - name: Tag the pinned image with the release version
+        if: github.ref_type == 'tag'
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          image="ghcr.io/${OWNER,,}/container-compose-machine"
+          digest=$(sed -n "s|.*\"${image}@\(sha256:[0-9a-f]*\)\".*|\1|p" Sources/ContainerCompose/ComposeConfiguration.swift)
+          [[ -n $digest ]] || { echo 'The plugin does not pin this image by digest.' >&2; exit 1; }
+          docker buildx imagetools create --tag "$image:${REF_NAME#v}" --tag "$image:latest" "$image@$digest"
+          {
+            echo "### Tagged $image:${REF_NAME#v}"
+            echo
+            echo "Points at \`$image@$digest\`, the image the released plugin pins."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Build and push
+        if: github.ref_type != 'tag'
         env:
           OWNER: ${{ github.repository_owner }}
           SOURCE: ${{ github.server_url }}/${{ github.repository }}
-          REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           image="ghcr.io/${OWNER,,}/container-compose-machine"
           tags=(--tag "$image:sha-${GITHUB_SHA::12}")
-          if [[ $REF_TYPE == tag ]]; then
-            tags+=(--tag "$image:${REF_NAME#v}")
-          elif [[ $REF_NAME == main ]]; then
+          if [[ $REF_NAME == main ]]; then
             tags+=(--tag "$image:edge")
           fi
           docker buildx create --use

@@ -1,0 +1,52 @@
+{
+  "name": "container-compose",
+  "private": true,
+  "description": "Release tooling only; the plugin itself is a Swift package.",
+  "devDependencies": {
+    "@semantic-release/commit-analyzer": "13.0.1",
+    "@semantic-release/exec": "7.1.0",
+    "@semantic-release/github": "12.0.10",
+    "@semantic-release/release-notes-generator": "14.1.1",
+    "conventional-changelog-conventionalcommits": "10.4.1",
+    "semantic-release": "25.0.9"
+  },
+  "release": {
+    "branches": ["main"],
+    "tagFormat": "v${version}",
+    "plugins": [
+      [
+        "@semantic-release/commit-analyzer",
+        {
+          "preset": "conventionalcommits",
+          "releaseRules": [
+            { "type": "build", "release": false },
+            { "type": "chore", "release": false },
+            { "type": "ci", "release": false },
+            { "type": "docs", "release": false },
+            { "type": "refactor", "release": false },
+            { "type": "test", "release": false }
+          ]
+        }
+      ],
+      [
+        "@semantic-release/release-notes-generator",
+        { "preset": "conventionalcommits" }
+      ],
+      [
+        "@semantic-release/exec",
+        {
+          "prepareCmd": "./scripts/set-version.sh \"${nextRelease.version}\" && make package VERSION=\"${nextRelease.version}\""
+        }
+      ],
+      [
+        "@semantic-release/github",
+        {
+          "assets": [
+            { "path": "dist/*.tar.gz" },
+            { "path": "dist/*.tar.gz.sha256" }
+          ]
+        }
+      ]
+    ]
+  }
+}
