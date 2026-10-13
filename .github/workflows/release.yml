@@ -1,0 +1,62 @@
+name: Release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  release:
+    name: Release
+    # The plugin is a macOS executable, so the release build runs where it runs.
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      # A tag pushed with the workflow token triggers nothing, so the release
+      # is made as the Robborg app when its secrets are set: its tag then
+      # starts the machine image workflow, which publishes the guest image
+      # under the same version. Without the secrets the release still
+      # happens, and the image tag has to be published by hand.
+      - id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ secrets.ROBBORG_CLIENT_ID }}
+          private-key: ${{ secrets.ROBBORG_PRIVATE_KEY }}
+        continue-on-error: true
+      # The checkout keeps the workflow token: the v0.0.0 marker below must
+      # not trigger anything, and only semantic-release pushes as the app.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1; inherited from the source repository
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: lts/*
+          cache: npm
+      - name: Check toolchain
+        run: swift --version
+      - name: Install release tooling
+        run: npm clean-install
+      - name: Verify npm signatures
+        run: npm audit signatures
+      # semantic-release counts releases from the latest tag. The first
+      # release is measured from the root commit rather than defaulting to 1.0.0.
+      - name: Ensure initial release tag
+        run: |
+          if git rev-parse -q --verify refs/tags/v0.0.0 >/dev/null; then
+            exit 0
+          fi
+          git tag v0.0.0 "$(git rev-list --max-parents=0 HEAD)"
+          git push origin v0.0.0
+      # Derives the version from the commits, stamps it into the executable,
+      # builds and packages it, tags the commit, and publishes the release
+      # with the archive, its checksum, and generated notes (see package.json).
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+        run: npx semantic-release
