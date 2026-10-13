@@ -46,7 +46,7 @@ client of the host's public machine and process APIs.
 ## Requirements
 
 - macOS 15 or newer on Apple silicon.
-- Swift 6.2 or newer to build the plugin.
+- Swift 6.2 or newer, only to build the plugin from source.
 - An installed and running `container` host (`container system start`). The
   plugin pins the host client SDK it is built against in `Package.swift`; that
   pin is a compatibility target, not a guarantee that every released host
@@ -57,19 +57,11 @@ client of the host's public machine and process APIs.
 
 ## Install
 
-There is no prebuilt installer yet, so install from source.
-
-```bash
-git clone https://github.com/RobertDeRose/container-compose.git
-cd container-compose
-container system start
-make install
-container compose --help
-```
-
-`make install` builds the `compose` executable in release mode, stages it with
-its plugin manifest and licenses, asks the running host for its installation
-root, and copies only this layout into it:
+Every [GitHub release](https://github.com/RobertDeRose/container-compose/releases)
+carries `container-compose-<version>-darwin-arm64.tar.gz` and its SHA-256
+checksum. The archive holds the staged plugin and its installer. Whichever
+route below you take, the result is the same layout in the host's plugin
+directory:
 
 ```text
 <install-root>/libexec/container-plugins/compose/
@@ -80,10 +72,58 @@ root, and copies only this layout into it:
 The host's external plugin loader discovers that directory on its own. No
 daemon is registered and no host service is replaced.
 
-To choose the installation root yourself:
+### From a GitHub release
+
+```bash
+gh release download --repo RobertDeRose/container-compose --pattern '*-darwin-arm64.tar.gz*'
+shasum -a 256 -c container-compose-*-darwin-arm64.tar.gz.sha256
+tar -xzf container-compose-*-darwin-arm64.tar.gz
+container system start
+./compose/install.sh
+container compose --help
+```
+
+Without the GitHub CLI, fetch both files from the release page with
+`curl -LO`. Release builds are ad-hoc signed, not notarized, so an archive
+saved by a browser carries the quarantine attribute and macOS refuses to run
+the executable in it. Download with `gh` or `curl`, or clear the attribute
+with `xattr -dr com.apple.quarantine compose` before installing.
+
+### With mise
+
+[mise](https://mise.jdx.dev) fetches the release through its GitHub backend,
+verifies the download against the digest GitHub reports, and keeps it
+current:
+
+```bash
+mise use --global github:RobertDeRose/container-compose
+"$(mise where github:RobertDeRose/container-compose)/install.sh"
+```
+
+mise puts the fetched layout under its own installs directory, and the host
+only loads plugins from its plugin directory, so the second command copies
+that layout there. After `mise upgrade github:RobertDeRose/container-compose`,
+run the installer again with `--replace`.
+
+### From source
+
+```bash
+git clone https://github.com/RobertDeRose/container-compose.git
+cd container-compose
+container system start
+make install
+container compose --help
+```
+
+`make install` builds the `compose` executable in release mode, stages it with
+its plugin manifest and licenses, and installs that layout the same way the
+release installer does.
+
+To choose the installation root yourself, with either installer:
 
 ```bash
 make install PREFIX=/usr/local
+./compose/install.sh --prefix /usr/local
 ```
 
 Do not assume `/usr/local`. The default reads the running host's reported root
@@ -92,12 +132,12 @@ changes after a host upgrade, so reinstall after one.
 
 ### Upgrade and uninstall
 
-The installer refuses to overwrite an existing plugin. To replace an
-installation that this repository created:
+The installer refuses to overwrite an existing plugin unless told to replace
+one that this project installed:
 
 ```bash
-git pull
-make install REPLACE=1
+./compose/install.sh --replace     # from a newer release archive
+make install REPLACE=1             # from source, after git pull
 ```
 
 Upgrading replaces only the plugin files. The machine, its Docker data, and
@@ -373,8 +413,26 @@ make package    # architecture-specific tar.gz with checksum
 CI runs `make test` on macOS and Linux. Linux builds only the portable
 `ComposeSupport` target and its tests; the executable and Apple client
 libraries require macOS. Local builds are ad-hoc signed; set
-`CODE_SIGN_IDENTITY` to sign with a certificate. Notarization and release
-hosting are not configured.
+`CODE_SIGN_IDENTITY` to sign with a certificate.
+
+### Releases
+
+Every push to `main` runs the release workflow, which uses
+[semantic-release](https://semantic-release.gitbook.io/) to derive the next
+version from the Conventional Commits since the last tag: `fix` releases a
+patch, `feat` a minor, and a `BREAKING CHANGE` footer a major. Other commit
+types do not release. The workflow stamps the version into the executable with
+`scripts/set-version.sh`, builds and packages it on macOS, tags `v<version>`,
+and publishes a GitHub release with the archive, its checksum, and notes
+generated from the commits. The checked-in version stays a development marker.
+Release builds are ad-hoc signed; notarization is not configured.
+
+The release is made as the Robborg GitHub App when the `ROBBORG_CLIENT_ID`
+and `ROBBORG_PRIVATE_KEY` secrets are set. A tag pushed with the workflow
+token would trigger nothing; the app's tag starts the machine image
+workflow, which tags the guest image the released plugin pins with the same
+version, so `container-compose-machine:<version>` is exactly what that
+release installs. Dependency updates come from Dependabot.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the conventions pull requests are
 expected to follow.
