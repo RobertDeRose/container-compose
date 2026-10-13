@@ -1,5 +1,5 @@
 {
-  "name": "container-compose",
+  "name": "container-compose-plugin",
   "private": true,
   "description": "Release tooling only; the plugin itself is a Swift package.",
   "devDependencies": {

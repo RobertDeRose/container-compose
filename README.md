@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/assets/container-compose-icon.png" alt="container-compose" width="160">
+  <img src="docs/assets/container-compose-icon.png" alt="container-compose-plugin" width="160">
 </p>
 
-# container-compose
+# container-compose-plugin
 
 `container compose` brings Docker Compose to Apple's [`container`](https://github.com/apple/container)
 CLI on macOS. It is an external plugin: once installed, `container compose up`
@@ -57,8 +57,8 @@ client of the host's public machine and process APIs.
 
 ## Install
 
-Every [GitHub release](https://github.com/RobertDeRose/container-compose/releases)
-carries `container-compose-<version>-darwin-arm64.tar.gz` and its SHA-256
+Every [GitHub release](https://github.com/RobertDeRose/container-compose-plugin/releases)
+carries `container-compose-plugin-<version>-darwin-arm64.tar.gz` and its SHA-256
 checksum. The archive holds the staged plugin and its installer. Whichever
 route below you take, the result is the same layout in the host's plugin
 directory:
@@ -75,9 +75,9 @@ daemon is registered and no host service is replaced.
 ### From a GitHub release
 
 ```bash
-gh release download --repo RobertDeRose/container-compose --pattern '*-darwin-arm64.tar.gz*'
-shasum -a 256 -c container-compose-*-darwin-arm64.tar.gz.sha256
-tar -xzf container-compose-*-darwin-arm64.tar.gz
+gh release download --repo RobertDeRose/container-compose-plugin --pattern '*-darwin-arm64.tar.gz*'
+shasum -a 256 -c container-compose-plugin-*-darwin-arm64.tar.gz.sha256
+tar -xzf container-compose-plugin-*-darwin-arm64.tar.gz
 container system start
 ./compose/install.sh
 container compose --help
@@ -96,20 +96,20 @@ verifies the download against the digest GitHub reports, and keeps it
 current:
 
 ```bash
-mise use --global github:RobertDeRose/container-compose
-"$(mise where github:RobertDeRose/container-compose)/install.sh"
+mise use --global github:RobertDeRose/container-compose-plugin
+"$(mise where github:RobertDeRose/container-compose-plugin)/install.sh"
 ```
 
 mise puts the fetched layout under its own installs directory, and the host
 only loads plugins from its plugin directory, so the second command copies
-that layout there. After `mise upgrade github:RobertDeRose/container-compose`,
+that layout there. After `mise upgrade github:RobertDeRose/container-compose-plugin`,
 run the installer again with `--replace`.
 
 ### From source
 
 ```bash
-git clone https://github.com/RobertDeRose/container-compose.git
-cd container-compose
+git clone https://github.com/RobertDeRose/container-compose-plugin.git
+cd container-compose-plugin
 container system start
 make install
 container compose --help
