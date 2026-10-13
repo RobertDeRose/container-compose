@@ -1,58 +1,75 @@
+<p align="center">
+  <img src="docs/assets/container-compose-icon.png" alt="container-compose" width="160">
+</p>
+
 # container-compose
 
-An external executable plugin for Apple's `container` CLI. It runs the real
-Docker Compose CLI and Docker Engine inside one persistent `container machine`.
-It does not translate Compose files into Apple Container operations and does not
-replace any installed Apple service.
+`container compose` brings Docker Compose to Apple's [`container`](https://github.com/apple/container)
+CLI on macOS. It is an external plugin: once installed, `container compose up`
+works the way `docker compose up` does, with the real Docker Engine and
+Docker Compose CLI running inside one persistent `container machine` Linux VM.
 
-This is the option-1 extraction from `feature/container-compose` at `b599cfb8`.
-The client SDK is pinned to unmodified upstream commit
-`eee7ad097079cc3b02d5309ec10160143f2d0c6a`. None of the accompanying upstream PRs
-is required by this repository.
+```bash
+cd ~/projects/my-app
+container compose up -d
+container compose ps
+```
 
-**Status:** source implementation with portable regression tests. The complete
-macOS build and VM/XPC integration have not been run during this extraction.
-Use the [validation checklist](docs/validation.md) before publishing a release.
-The SDK pin is a compatibility target, not a claim that every released host
-version supports these APIs.
+The plugin does not translate Compose files into Apple Container operations and
+does not replace or patch any installed Apple service. It is a thin, careful
+client of the host's public machine and process APIs.
+
+## Features
+
+- **Unmodified Docker Compose.** Every Compose subcommand, flag, and file format
+  works because the real `docker compose` runs the project inside the machine.
+- **One persistent machine.** All projects share a machine named `compose`.
+  Images, named volumes, networks, and build cache survive `compose down` and
+  machine shutdowns.
+- **Your home directory, same path.** The machine mounts your macOS home
+  directory read-write at the same path, so relative and absolute bind mounts
+  under it work unchanged.
+- **Published ports on `localhost`.** TCP ports a container publishes are
+  mirrored onto `127.0.0.1` and `::1`, as Docker Desktop does.
+- **A Docker socket for host tools.** `container compose --socket-path` gives
+  the `docker` CLI, IDEs, and Testcontainers a `DOCKER_HOST` that talks to the
+  machine's daemon.
+- **Native `--help` and shell completions.** Forwarded Compose help reads as
+  `container compose`, and bash, zsh, and fish completions are generated
+  without booting a VM.
+- **Optional idle shutdown.** The machine can power itself off after Docker has
+  been idle, and boots again on the next command.
+- **Safe by design.** The plugin records its own ownership of the machine,
+  refuses to adopt machines it did not create, and never deletes machine data
+  on install, upgrade, or removal.
 
 ## Requirements
 
-macOS 15 or newer, Swift 6.2 or newer, and an installed/running `container` host
-with the machine APIs present at the pinned baseline. VM/network support remains
-subject to that host's requirements. Build and operate the plugin as your normal
-login user, not as root. The installer requests elevated privileges only for
-copying files into a protected installation prefix.
+- macOS 15 or newer on Apple silicon.
+- Swift 6.2 or newer to build the plugin.
+- An installed and running `container` host (`container system start`). The
+  plugin pins the host client SDK it is built against in `Package.swift`; that
+  pin is a compatibility target, not a guarantee that every released host
+  version exposes the same machine APIs.
+- A normal login user. Build and operate the plugin as yourself, not as root.
+  The installer asks for elevated privileges only when the installation prefix
+  is protected.
 
-The guest image is built from `machine-image/` and published for `linux/arm64`
-to `ghcr.io/robertderose/container-compose-machine`. The plugin pins its default
-by digest (`ComposeConfiguration.defaultImage`), and the host pulls it when the
-machine is first created. Existing images and machines are reused. Another
-compatible image can be selected with `CONTAINER_COMPOSE_MACHINE_IMAGE`, for
-example one built locally:
+## Install
 
-```bash
-container build --file machine-image/Containerfile --tag compose-machine:dev machine-image
-export CONTAINER_COMPOSE_MACHINE_IMAGE=compose-machine:dev
-```
-
-The `Machine image` GitHub Actions workflow publishes the image. It runs on
-pushes to `main` that change `machine-image/` (tagged `edge`), on `v*` tags
-(tagged with the version), and manually for any branch. Every image is also
-tagged `sha-<commit>`, and the run summary prints the digest. After changing
-`machine-image/`, publish it and update the pinned digest.
-
-## Build and install
+There is no prebuilt installer yet, so install from source.
 
 ```bash
+git clone https://github.com/RobertDeRose/container-compose.git
+cd container-compose
 container system start
-make test
 make install
 container compose --help
 ```
 
-`make install` builds and stages the executable, asks the
-running host for its installation root, and installs only:
+`make install` builds the `compose` executable in release mode, stages it with
+its plugin manifest and licenses, asks the running host for its installation
+root, and copies only this layout into it:
 
 ```text
 <install-root>/libexec/container-plugins/compose/
@@ -60,76 +77,93 @@ running host for its installation root, and installs only:
 └── bin/compose
 ```
 
-The external plugin loader discovers this layout. No daemon registration or
-host service replacement is performed. Root help/plugin discovery still depends
-on the installed host's behavior and availability.
+The host's external plugin loader discovers that directory on its own. No
+daemon is registered and no host service is replaced.
 
-To specify the installation root explicitly:
+To choose the installation root yourself:
 
 ```bash
 make install PREFIX=/usr/local
 ```
 
-Do not assume `/usr/local` for every installation. The default installer uses
-`compose --install-path`, which reads the running host's reported root. For a
-versioned package-manager prefix, reinstall after a host upgrade that changes
-that root.
+Do not assume `/usr/local`. The default reads the running host's reported root
+through `compose --install-path`, and a versioned package-manager prefix
+changes after a host upgrade, so reinstall after one.
 
-The installer refuses to overwrite an existing plugin by default. After
-reviewing an upgrade, replace an installation owned by this repository with:
+### Upgrade and uninstall
+
+The installer refuses to overwrite an existing plugin. To replace an
+installation that this repository created:
 
 ```bash
+git pull
 make install REPLACE=1
 ```
 
-To produce an archive containing the executable, manifest, and licenses, run
-`make package`. The archive is architecture-specific; it is not a
-universal binary. Local builds are ad-hoc signed by default. Setting
-`CODE_SIGN_IDENTITY` changes signing; notarization and release hosting are not
-configured. A source bundle is not a prebuilt installer.
+Upgrading replaces only the plugin files. The machine, its Docker data, and
+the plugin's state are untouched. To uninstall, stop the background forwarder,
+then remove the directory that `container compose --install-path` prints.
+Removing the plugin does not delete the machine. See
+[operations and recovery](docs/operations.md) for the full procedure.
 
-## Use
+### Shell completions
 
-Run from a project under your macOS home directory:
+The completion scripts chain to any completion already registered for
+`container`, so load them after the host's own completion, for example at the
+end of your shell profile:
 
 ```bash
+# ~/.zshrc
+eval "$(container compose --completions zsh)"
+```
+
+`bash` and `fish` are supported the same way.
+
+## First run
+
+Run Compose from a project under your macOS home directory:
+
+```bash
+cd ~/projects/my-app
 container compose up -d
-container compose ps
 container compose logs -f
 container compose exec api sh
 container compose down
 ```
 
-All projects share a machine named `compose`. Use distinct Compose project
-names where appropriate. The home directory is mounted read-write at the same
-path, and project environment variables are forwarded for interpolation. Bind
-sources outside the shared home are not supported by this wrapper. Host Docker
-connection settings, host credential-helper configuration, and SSH agent
-forwarding are deliberately not reused.
+The first invocation does more than later ones. The host pulls the guest image
+from GHCR, creates the `compose` machine with the default CPU and memory, boots
+it, waits for Docker, and then runs your command. Later commands reuse the
+running machine, and a stopped machine boots automatically.
 
-Arguments become opaque after forwarding starts. A guest program's `--help`,
-`-h`, `--socket-path`, or `--completions` is not interpreted by this wrapper.
-`container compose --help` shows plugin help; `container compose up --help`
-executes Compose help inside the machine and rewrites `docker compose` to
-`container compose` in its standard output. Only the exact forms `help`,
-`help <subcommand>`, and `<subcommand> --help|-h` are rewritten. `--completions bash`, `zsh`, and `fish`
-produce static completion scripts without booting a VM.
+A few rules apply to every command:
 
-Docker images, named volumes, networks, and build cache remain in the persistent
-machine filesystem across shutdown. `compose down` does not stop the VM.
+- Projects must live under your home directory. Bind sources outside it are
+  not available in the machine.
+- All projects share one machine, so use distinct Compose project names where
+  two projects would otherwise collide.
+- Your environment variables are forwarded for Compose interpolation. Host
+  Docker connection settings, credential helpers, and SSH agent forwarding are
+  deliberately not reused.
+- After the subcommand, arguments are opaque. `container compose --help` shows
+  plugin help, `container compose up --help` runs Compose help inside the
+  machine, and a guest program's own `--help` is passed straight through.
+
+### Managing the machine
+
+`compose down` stops containers but leaves the VM running. The native machine
+commands manage the VM itself:
 
 ```bash
 container machine ls
 container machine inspect compose
 container machine stop compose
-container compose ps
+container compose ps          # boots the stopped machine again
 ```
 
-The last command boots the stopped machine automatically. This plugin does not
-require the proposed native `container machine start` command.
-
-CPU and memory defaults are used when creating a machine. Existing machine
-resource settings remain authoritative; change them through the native command:
+The machine is created with default resources. To change them, use the native
+command and restart the machine; the change applies to every project on the
+next boot:
 
 ```bash
 container machine set -n compose cpus=8 memory=8gb
@@ -137,17 +171,16 @@ container machine stop compose
 container compose ps
 ```
 
-Resource changes affect all Compose projects and take effect on the next boot.
-Removing the plugin files does not delete the machine. Native machine deletion
-is destructive: it removes Docker data, including named volumes. Do not use it
-as an installation or upgrade step.
+Native machine deletion is destructive: it removes all Docker data, including
+named volumes. Never use it as an install or upgrade step.
 
 ## Configuration
 
-Use the host's existing configuration files. Their paths are reported by
-`container system status --format json`. The plugin reads the app-root file
-`config/config.toml` and install-root file `etc/container/config.toml` through the
-upstream configuration loader, with its environment-variable support:
+The plugin reads its section from the host's existing configuration files. The
+app-root `config/config.toml` and install-root `etc/container/config.toml` are
+both consulted through the host's own loader, including its environment
+variable support. `container system status --format json` reports their
+paths.
 
 ```toml
 [plugin.compose]
@@ -156,86 +189,83 @@ memory = "4gb"
 idle-shutdown-seconds = 600
 ```
 
-The default idle timeout is **0**, meaning disabled. A positive timeout enables
-the guest-side watcher after the next normal Compose invocation. Running Docker
-containers, connected Docker API clients, and failed activity probes prevent or
-reset shutdown. The timeout is sampled by the watcher; it is not an exact
-shutdown deadline. This is a best-effort policy with a final recheck, not an
-atomic guarantee against a newly arriving client at the shutdown boundary.
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `cpus` | `4` | CPUs for a machine the plugin creates. An existing machine keeps its own setting. |
+| `memory` | `"4gb"` | Memory for a machine the plugin creates. At least 1 GB. |
+| `idle-shutdown-seconds` | `0` | Power the machine off after Docker has been idle this long. `0` disables it. |
 
-The watcher powers off the guest through systemd. It does not stop Apple's
-separate native builder and does not monitor general service utilization. A
-running but otherwise idle application container keeps the machine running.
+A positive idle timeout takes effect on the next Compose invocation. Running
+containers, connected Docker API clients, and failed activity probes keep the
+machine up or reset the timer. The watcher samples the timeout, so it is a
+best-effort policy rather than an exact deadline, and a running but idle
+application container counts as activity.
 
-## Networking and host Docker clients
+The guest image can be overridden with `CONTAINER_COMPOSE_MACHINE_IMAGE` for a
+machine that has not been created yet, for example to test a local build:
 
-TCP ports that containers publish are also forwarded to macOS `localhost`
-(`127.0.0.1` and `::1`), as Docker Desktop does, while the Docker socket
-forwarder described below is running. `container compose` starts it, and so does
-`--socket-path`. Ports bound to the machine's loopback, such as
-`127.0.0.1:4000:4000`, are forwarded too. Forwarding begins within a few
-seconds of a container starting and stops when the port disappears or the
-machine stops.
+```bash
+container build --file machine-image/Containerfile --tag compose-machine:dev machine-image
+export CONTAINER_COMPOSE_MACHINE_IMAGE=compose-machine:dev
+```
 
-- Ports are mirrored only on loopback, never onto your LAN. macOS lets a normal
-  user bind ports below 1024 only on all interfaces, so for those ports the
-  forwarder binds all interfaces and closes connections that do not come from
-  this Mac.
-- A port that another program on the Mac already listens on, at `localhost` or
-  on all interfaces, is skipped, so `localhost` traffic never splits between
-  two programs. For example, AirPlay Receiver holds `*:5000` and `*:7000`. The
-  skip is logged once and retried every 30 seconds, so forwarding starts when
-  the port is freed.
+Changing the image does not rebuild an existing machine.
+
+## Ports and host Docker clients
+
+### Published ports on localhost
+
+While the plugin's background forwarder is running, TCP ports that containers
+publish are also reachable on macOS `localhost`, both `127.0.0.1` and `::1`.
+`container compose` starts the forwarder, and so does `--socket-path`.
+Forwarding begins within a few seconds of a container starting and stops when
+the port disappears or the machine stops.
+
+- Ports are mirrored only on loopback, never onto your LAN. For ports below
+  1024, which an unprivileged user can bind only on all interfaces, the
+  forwarder binds the wildcard address and rejects non-local peers.
+- A port that another program on the Mac already holds is skipped so that
+  `localhost` traffic never splits between two programs. AirPlay Receiver's
+  `5000` and `7000` are common examples. The skip is logged once and retried
+  every 30 seconds.
 - UDP is not forwarded.
-- Discovery reads the guest's `docker-proxy` processes. It does not work if the
-  Docker userland proxy is disabled.
-- Each connection is relayed by `socat` inside the machine to the address the
-  port was published on, over the same process channel as
-  `container machine run`, so it works even when the Mac cannot reach the
-  machine's network address.
+- Discovery reads the guest's `docker-proxy` processes, so it requires the
+  Docker userland proxy, which is enabled by default.
 
-Published ports remain reachable through the machine's address as well. The
-ordinary `compose.machine` hostname can use the host's existing `machine` DNS
-domain configuration. The plugin neither installs DNS configuration nor adds
-wildcard project aliases.
+Published ports stay reachable through the machine's address as well. The
+plugin neither installs DNS configuration nor adds wildcard project aliases.
 
 ### Host Docker socket
 
-Host Docker clients (the `docker` CLI, IDEs, Testcontainers) can use the
-machine's daemon through a Unix socket in your home directory:
+Host Docker clients can use the machine's daemon through a Unix socket in your
+home directory:
 
 ```bash
 # ~/.zshrc
 export DOCKER_HOST="$(container compose --socket-path)"
 ```
 
-`--socket-path` prints `unix://$HOME/.local/run/docker.socket`. If no forwarder
-from the installed plugin is listening there, it first starts one in the
+`--socket-path` prints `unix://$HOME/.local/run/docker.socket`. If no
+forwarder from the installed plugin is listening there, it starts one in the
 background. It does not contact the container services or boot the machine, so
-it is cheap enough for a shell profile. A forwarder started by a different
-plugin build is replaced, which is how upgrades take effect.
+it is cheap enough for a shell profile. A forwarder started by an older plugin
+build is replaced, which is how upgrades take effect.
 
-The forwarder boots the `compose` machine on the first Docker request, so idle
-shutdown still applies. Each connection is relayed to
-`docker system dial-stdio` inside the machine. If the machine cannot be
-prepared, clients receive a Docker API error that explains why. The socket is
-mode `0600`, and no TCP listener is added.
-
-When a forwarder is replaced or sent SIGTERM, it releases the socket at once
-and exits after its open connections finish, so a running `logs -f` or
-`compose up` is not cut off. A second signal stops it immediately.
+The machine boots on the first Docker request, so idle shutdown still applies.
+If the machine cannot be prepared, clients receive a Docker API error that says
+why. The socket is mode `0600` and no TCP listener is added. Paths sent by
+host clients resolve inside the machine, so bind mounts work for paths under
+your home directory.
 
 The forwarder logs to `~/Library/Logs/container-compose/docker-socket.log`.
-To stop it, run:
+When replaced or sent SIGTERM it releases the socket at once and exits after
+open connections finish, so a running `logs -f` is not cut off. To stop it:
 
 ```bash
 kill "$(head -1 ~/.local/run/docker.socket.lock)"
 ```
 
-Paths sent by host clients are resolved inside the machine. Bind mounts work
-for paths under your home directory, which the machine mounts at the same path.
-
-For direct Docker administration, use the native guest execution interface:
+For direct Docker administration inside the guest:
 
 ```bash
 container machine run -n compose --root env \
@@ -243,33 +273,114 @@ container machine run -n compose --root env \
     docker info
 ```
 
-## Ownership and migration
+## Architecture
 
-The plugin serializes its own initialization attempts and records an ownership
-UUID in its own `plugin-state/compose/machine.json` and in the guest filesystem.
-It checks immutable machine configuration before boot and verifies the guest
-token before forwarding commands or changing idle-shutdown settings. It does
-not read or edit the daemon's `state.json`, change another machine's default, or
-install orphan-recovery logic in Apple's service.
+### How a command runs
 
-**An existing `compose` machine from the original feature branch is not adopted
-automatically.** Installing this plugin does not migrate that machine or its
-Docker data. See [migration and recovery](docs/migration.md) before testing on a
-host that already uses the original branch.
+1. `container` finds the `compose` executable in its external plugin
+   directory and runs it with the remaining arguments.
+2. The plugin resolves the working directory and environment to forward,
+   failing fast if the directory is outside the home mount. Nothing has
+   touched the machine yet.
+3. It starts the background forwarder if one is not already running.
+4. Under a per-plugin initialization lock it inspects the `compose` machine.
+   On first use it creates one from the pinned guest image; otherwise it
+   verifies that the machine's immutable configuration and guest ownership
+   token match its own record and refuses anything ambiguous.
+5. It boots the machine if needed, waits for its address and for Docker, and
+   applies the configured idle timeout.
+6. It releases the lock and runs `docker compose` as a guest process, relaying
+   stdin, stdout, stderr, terminal size, and signals. The lock covers
+   initialization only, so independent projects run concurrently.
 
-Without an upstream creation-policy option, the first machine may become the
-host's default machine. This plugin accepts and reports that host behavior
-rather than silently changing daemon state.
+### Components
 
-## Repository layout
+| Path | Role |
+| --- | --- |
+| `Sources/ComposePlugin` | The `compose` executable's entry point. Handles `--help` and `--version`, then hands off to the command. |
+| `Sources/ContainerCompose` | The plugin library: the CLI command, configuration, environment policy, machine orchestration and ownership, the guest process runner, help rewriting, completions, and the socket and port forwarder. |
+| `Sources/ContainerCompose/Compatibility` | A small client layer over the host's existing process routes. It carries descriptor ownership, cancellable reply waits, and bounded guest process termination locally so no patched host is required. |
+| `Sources/ComposeSupport` | Portable pieces with no Apple dependencies: the ownership record store and cancellable callback waits. These build and test on Linux too. |
+| `machine-image` | The guest image. Debian with pinned Docker Engine, Compose, and Buildx packages, plus the systemd idle-shutdown service. |
+| `scripts` | Staging, installation, packaging, and the installer's own test. |
+| `Tests/ComposePluginTests` | macOS tests for the plugin library, including the forwarders and process lifecycle. |
+| `Tests/ComposeSupportTests` | Portable tests, including the real idle-shutdown script run against fake commands. |
+| `docs` | Architecture, operations, and testing references. |
 
-`Sources/ContainerCompose` owns the command, machine orchestration, environment
-policy, the Docker socket and port forwarder, and a small client compatibility
-layer. `machine-image` holds the guest image's Containerfile and idle-shutdown
-service. `Sources/ComposeSupport`
-contains portable identity storage and cancellable callback waiting. Apple client
-libraries remain external Swift package dependencies.
+Inside the plugin library, the main pieces are:
 
-See [architecture and compatibility](docs/architecture.md),
-[upstream PR scope](docs/upstream-prs.md), and [validation](docs/validation.md).
-Original Apache-2.0 notices are retained; this is not an Apple-supported plugin.
+- **ComposeCommand** parses plugin options (`--completions`, `--install-path`,
+  `--socket-path`) and captures everything else for Compose.
+- **ComposeEnvironment** decides which host paths and variables are forwarded.
+- **ComposeMachineManager**, **ComposeMachineOwnership**, and
+  **ComposeMachineInitializationLock** create, verify, boot, and serialize
+  access to the shared machine.
+- **ComposeProcessRunner** runs the forwarded command through the
+  compatibility client.
+- **ComposeForwarderService** is the background process behind
+  `--socket-path`. It runs **ComposeSocketForwarder** (the Docker socket) and
+  **ComposePortForwarder** (published ports) as peers, both bridging each
+  connection through a guest process with **ComposeGuestBridge**.
+  **ComposeGuestPortSource** watches `docker-proxy` processes for published
+  ports with one long-lived guest process per boot.
+
+### Ownership and state
+
+The plugin keeps an ownership record at
+`<app-root>/plugin-state/compose/machine.json` holding the machine ID, image
+digest, user identity, and a random UUID. The same UUID is written inside the
+guest at `/etc/container/compose-plugin-owner`. Before boot it checks the
+machine's immutable configuration; before forwarding commands or changing the
+idle policy it checks the guest token. Runtime state such as running status,
+addresses, and process lists is never duplicated. The native machine service
+owns it.
+
+A machine that exists without a record, a record without a machine, a corrupt
+record, or a mismatched token is an error. The plugin never adopts, repairs, or
+deletes a machine on its own. Without an upstream creation-policy option, the
+first machine on an empty host may become the host's default machine; the
+plugin reports that rather than editing daemon state.
+
+### Guest image
+
+The image is built from `machine-image/` and published for `linux/arm64` to
+`ghcr.io/robertderose/container-compose-machine`. The plugin pins its default
+by digest in `ComposeConfiguration.defaultImage`, and the host pulls it when
+the machine is first created. The `Machine image` GitHub Actions workflow
+publishes on pushes to `main` that change `machine-image/` (tagged `edge`), on
+`v*` tags (tagged with the version), and manually for any branch. Every image
+is also tagged `sha-<commit>`, and the run summary prints the digest to pin.
+
+### Further reading
+
+- [Architecture](docs/architecture.md): how a command runs, machine
+  ownership, the guest process client, and the forwarder designs.
+- [Operations and recovery](docs/operations.md): state locations, what each
+  refusal means, upgrading, and removal.
+- [Testing](docs/testing.md): the test tiers, what they cover, and the
+  checklist to run on a real host.
+
+## Development
+
+```bash
+make build      # release build of the compose executable
+make test       # swift test plus the installer test
+make lint       # swift-format and shell syntax checks
+make stage      # build and stage dist/staging/compose for install or package
+make package    # architecture-specific tar.gz with checksum
+```
+
+CI runs `make test` on macOS and Linux. Linux builds only the portable
+`ComposeSupport` target and its tests; the executable and Apple client
+libraries require macOS. Local builds are ad-hoc signed; set
+`CODE_SIGN_IDENTITY` to sign with a certificate. Notarization and release
+hosting are not configured.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the conventions pull requests are
+expected to follow.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md) for the
+attributions of derived and third-party code. This project is not maintained
+or endorsed by Apple.
