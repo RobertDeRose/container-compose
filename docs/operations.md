@@ -51,10 +51,21 @@ procedures. The plugin does not reconcile the machine service's state.
 
 ## Upgrading
 
+From a newer release archive, or from source:
+
+```bash
+./compose/install.sh --replace
+```
+
 ```bash
 git pull
 make install REPLACE=1
-container compose --socket-path   # replaces the running forwarder
+```
+
+Then replace the running forwarder:
+
+```bash
+container compose --socket-path
 ```
 
 Replacing the executable leaves the machine, its Docker packages, the guest
