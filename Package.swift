@@ -40,7 +40,7 @@ let platformTargets: [Target] = []
 #endif
 
 let package = Package(
-    name: "container-compose",
+    name: "container-compose-plugin",
     platforms: [.macOS("15")],
     products: products,
     dependencies: dependencies,

@@ -116,7 +116,7 @@ pull request description.
 - New files start with the project header:
 
   ```swift
-  // Copyright © 2026 Robert DeRose and the container-compose contributors.
+  // Copyright © 2026 Robert DeRose and the container-compose-plugin contributors.
   // SPDX-License-Identifier: Apache-2.0
   ```
 
@@ -125,7 +125,7 @@ pull request description.
 
   ```swift
   // Copyright © 2026 Apple Inc. and the container project authors.
-  // Modifications copyright © 2026 Robert DeRose and the container-compose contributors.
+  // Modifications copyright © 2026 Robert DeRose and the container-compose-plugin contributors.
   ```
 
   New third-party code needs an entry in `NOTICE.md`.

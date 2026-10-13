@@ -1,4 +1,4 @@
-// Copyright © 2026 Robert DeRose and the container-compose contributors.
+// Copyright © 2026 Robert DeRose and the container-compose-plugin contributors.
 // SPDX-License-Identifier: Apache-2.0
 
 import ContainerPersistence

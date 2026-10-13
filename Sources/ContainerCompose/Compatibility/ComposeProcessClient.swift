@@ -1,5 +1,5 @@
 // Copyright © 2025-2026 Apple Inc. and the container project authors.
-// Modifications copyright © 2026 Robert DeRose and the container-compose contributors.
+// Modifications copyright © 2026 Robert DeRose and the container-compose-plugin contributors.
 // Adapted from ContainerAPIClient/ClientProcess.swift and ContainerXPC/XPCClient.swift.
 // SPDX-License-Identifier: Apache-2.0
 

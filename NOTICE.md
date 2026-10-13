@@ -3,7 +3,7 @@
 Parts of this project are derived from apple/container, licensed under the
 Apache License, Version 2.0. Source files that contain derived code keep their
 original copyright and license notices and note the modification. Modifications
-copyright © 2026 Robert DeRose and the container-compose contributors. This
+copyright © 2026 Robert DeRose and the container-compose-plugin contributors. This
 project is not maintained or endorsed by Apple.
 
 **Apple Inc. and the AsyncHTTPClient project authors ( async-http-client )**
