@@ -28,6 +28,7 @@ chmod 0755 "$plugin/cli/compose" "$plugin/install.sh" "$plugin/bin/compose" \
     "$root/bin/mise" "$MISE_COMPOSE_TEST_HOST/Payload/bin/container"
 export PATH="$root/bin:$PATH"
 unset COMPOSE_STAGING_DIR
+[[ $("$plugin/cli/compose" --version) == native-version-one ]]
 destination="$MISE_COMPOSE_TEST_HOST/Payload/libexec/container-plugins/compose"
 expected=$(printf '%s\n' '-f' 'a file with spaces.yaml' 'config')
 [[ $("$plugin/cli/compose" -f 'a file with spaces.yaml' config) == "$expected" ]]
