@@ -4,11 +4,26 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "ci(actions)"
+    groups:
+      github-actions:
+        patterns: ["*"]
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "chore(tooling)"
+    groups:
+      release-tooling:
+        patterns: ["*"]
   - package-ecosystem: swift
     directory: /
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "fix(deps)"
+    groups:
+      swift-dependencies:
+        patterns: ["*"]
