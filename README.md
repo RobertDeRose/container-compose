@@ -75,12 +75,19 @@ got there.
 
 ```bash
 brew install RobertDeRose/tap/container-compose-plugin
+container system start
+compose --help
 ```
 
-The formula depends on Homebrew's `container` formula and links itself into
-that formula's plugin directory. `brew upgrade container` replaces that
-directory, so after upgrading `container` run
-`brew postinstall container-compose-plugin` to link the plugin again.
+Homebrew installs `container` automatically if it is missing and provides the
+shorter `compose` command. On first use, `compose` registers the plugin with
+Homebrew's host, then forwards arguments to `container compose`. No separate
+registration command or sudo is needed. For example, `compose up -d` is the
+same as `container compose up -d`.
+
+The wrapper also restores registration on the next `compose` invocation after
+`brew upgrade container`. Both host and plugin paths use Homebrew's stable
+`opt` links. After registration, `container compose` remains available directly.
 
 ### container from mise
 
@@ -102,6 +109,8 @@ fi
 [tools."github:RobertDeRose/container-compose-plugin"]
 version = "latest"
 depends = ["container"]
+strip_components = 1
+bin_path = "cli"
 postinstall = """
 "$MISE_TOOL_INSTALL_PATH/install.sh" --replace --prefix "$(mise where container)/Payload"
 """
@@ -111,6 +120,16 @@ Then `mise install`. The plugin's step installs it into the current
 `container`; the `container` step reinstalls the plugin into a newly upgraded
 `container`, and does nothing when the plugin is not installed. Upgrading
 either tool with `mise upgrade` keeps them matched.
+
+With mise activated in your shell, this also provides the shorter `compose`
+command. It forwards to the selected mise `container` and restores registration
+on first use if needed. For example:
+
+```bash
+mise install
+container system start
+compose --help
+```
 
 ### container from Apple's installer
 
@@ -158,8 +177,8 @@ release installer does. `make install PREFIX=/usr/local` names the root.
 
 Do not assume `/usr/local`. The default reads the running host's reported root
 through `compose --install-path`, and a versioned prefix changes after a host
-upgrade, so reinstall after one; the Homebrew and mise routes above do that
-for you.
+upgrade, so reinstall after one; the Homebrew `compose` wrapper and mise hooks
+keep their installations registered as described above.
 
 ### Upgrade and uninstall
 

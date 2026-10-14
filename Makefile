@@ -12,6 +12,7 @@ build:
 test:
 	$(SWIFT) test
 	./scripts/test-install.sh
+	./scripts/test-mise.sh
 	./scripts/test-homebrew.sh
 
 stage: build

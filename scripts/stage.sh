@@ -15,5 +15,7 @@ printf '%s\n' 'container-compose external CLI plugin' > "$stage/.container-compo
 chmod 0644 "$stage/.container-compose-plugin"
 # The installer ships in the archive so a release installs without the repository.
 install -m 0755 scripts/install.sh "$stage/install.sh"
+install -d -m 0755 "$stage/cli"
+install -m 0755 scripts/compose-mise.sh "$stage/cli/compose"
 codesign --force --sign "${CODE_SIGN_IDENTITY:--}" --timestamp=none "$stage/bin/compose"
 printf '%s\n' "$stage"

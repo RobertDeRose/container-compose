@@ -66,6 +66,8 @@ trap cleanup EXIT
 run_privileged cp -R "$stage/." "$temporary/"
 # The archive's copy of this installer is not part of the plugin.
 run_privileged rm -f "$temporary/install.sh"
+# The mise command wrapper belongs on the user's PATH, not in the host plugin.
+run_privileged rm -rf "$temporary/cli"
 # Every directory must stay traversable by the login user once root owns it.
 run_privileged find "$temporary" -type d -exec chmod 0755 {} +
 if [[ -e $destination ]]; then
