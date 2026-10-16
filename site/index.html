@@ -420,7 +420,10 @@ volumes:
       </div>
     </div>
 
-    <p class="aside">A running dashboard counts as activity, so the machine won’t shut itself down while one is up.</p>
+    <div class="callout" role="note">
+      <p class="callout-title">A running dashboard keeps the machine on</p>
+      <p>If you’ve turned on idle shutdown with <code>idle-shutdown-seconds</code>, a dashboard counts as activity, so the machine never powers off while it runs. Run <code>compose down</code> in the dashboard’s folder when you’re done with it.</p>
+    </div>
   </div>
 </section>
 
