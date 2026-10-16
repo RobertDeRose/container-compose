@@ -6,6 +6,9 @@
   --rule: #c9cfd5;
   --red: #d8443a;
   --red-ink: #b3322a;
+  /* Behind white text: 5.4:1, where --red is only 4.4:1. */
+  --red-fill: #c0392f;
+  --red-fill-hover: #a83026;
   --steel: #4a535c;
   --light: #c3c9cf;
   --blue: #2a6fc9;
@@ -162,14 +165,12 @@ h1 code { font-size: 0.82em; background: none; padding: 0; letter-spacing: -0.04
 
 .copy {
   font: 600 0.8rem var(--sans);
-  background: var(--red); color: #fff;
+  background: var(--red-fill); color: #fff;
   border: 0; border-radius: 5px;
   padding: 0.45rem 0.75rem;
   cursor: pointer;
 }
-.copy:hover { background: var(--red-ink); }
-:root[data-theme="dark"] .copy:hover { background: #c7392f; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .copy:hover { background: #c7392f; } }
+.copy:hover { background: var(--red-fill-hover); }
 
 .cta-links { display: flex; flex-wrap: wrap; gap: 1.5rem; margin: 1rem 0 0; font-weight: 600; }
 .fine { color: var(--hull); font-size: 0.9rem; margin: 1.5rem 0 0; }
@@ -261,6 +262,7 @@ h1 code { font-size: 0.82em; background: none; padding: 0; letter-spacing: -0.04
 @keyframes print { to { opacity: 1; } }
 @keyframes land { to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
   .js .ln, .js .box { opacity: 1; transform: none; animation: none !important; }
 }
 
@@ -409,7 +411,7 @@ thead th {
 tbody th { font-weight: 600; color: var(--hull); width: 22%; }
 td { color: var(--ink); }
 .us { background: color-mix(in srgb, var(--red) 9%, var(--paper)); }
-thead .us { background: var(--red); color: #fff; border-bottom-color: var(--red); border-radius: 6px 6px 0 0; }
+thead .us { background: var(--red-fill); color: #fff; border-bottom-color: var(--red-fill); border-radius: 6px 6px 0 0; }
 tbody tr:last-child .us { border-radius: 0 0 6px 6px; }
 
 .fit {
