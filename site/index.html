@@ -28,6 +28,7 @@
       <a href="#features">Features</a>
       <a href="#compare">Compare</a>
       <a href="#install">Install</a>
+      <a href="#dashboards">Dashboards</a>
       <a class="nav-gh" href="https://github.com/RobertDeRose/container-compose-plugin">GitHub</a>
     </nav>
   </div>
@@ -231,7 +232,7 @@ compose exec db psql</code></pre>
           </tr>
           <tr>
             <th scope="row">Graphical interface</th>
-            <td class="us">None, terminal only</td>
+            <td class="us">Optional and <a href="#dashboards">customizable</a></td>
             <td>Yes</td>
             <td>Yes</td>
           </tr>
@@ -258,13 +259,12 @@ compose exec db psql</code></pre>
           <li>You already run Apple’s <code>container</code> and miss Compose.</li>
           <li>You want Compose without a desktop app or a license to track.</li>
           <li>Your projects need exact Docker Compose behavior, not a reimplementation.</li>
-          <li>You live in the terminal and don’t need a dashboard.</li>
+          <li>You want to pick your own dashboard, or work without one.</li>
         </ul>
       </div>
       <div>
         <h3>Choose something else if</h3>
         <ul>
-          <li>You need a GUI to browse containers, images, and logs.</li>
           <li>Your team works across Windows, Linux, and Intel Macs.</li>
           <li>Your services publish UDP ports to the host.</li>
         </ul>
@@ -345,6 +345,82 @@ compose up -d</code></pre>
         <li>Deleting the machine with <code>container machine delete</code> removes all Docker data, including volumes.</li>
       </ul>
     </details>
+  </div>
+</section>
+
+<div class="corrugate" aria-hidden="true"></div>
+
+<section id="dashboards" class="section">
+  <div class="wrap">
+    <h2>Add a dashboard if you want one</h2>
+    <p class="intro">There’s no built-in GUI, so you choose your own. A web dashboard runs as a Compose project like any other, its page appears on <code>localhost</code>, and Safari’s File → Add to Dock turns it into an app.</p>
+
+    <div class="tabs">
+      <div class="tablist" role="tablist" aria-label="Dashboard">
+        <button type="button" role="tab" id="t-arcane" aria-controls="p-arcane" aria-selected="true">Arcane</button>
+        <button type="button" role="tab" id="t-dockge" aria-controls="p-dockge" aria-selected="false" tabindex="-1">Dockge</button>
+        <button type="button" role="tab" id="t-other" aria-controls="p-other" aria-selected="false" tabindex="-1">Other</button>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-arcane" aria-labelledby="t-arcane" tabindex="0">
+        <h3 class="no-js">Arcane</h3>
+        <p><a href="https://getarcane.app">Arcane</a> manages containers, images, volumes, networks, and Compose projects, closest to the dashboard in Docker Desktop. It picks up existing projects in its projects folder. <a href="https://github.com/getarcaneapp/arcane">Source on GitHub</a>, BSD-3-Clause.</p>
+        <pre class="block"><button type="button" class="copy">Copy</button><code>mkdir -p ~/arcane/projects && cd ~/arcane
+printf 'ARCANE_ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" > .env</code></pre>
+        <p>Save this as <code>~/arcane/compose.yaml</code>:</p>
+        <pre class="block"><button type="button" class="copy">Copy</button><code>services:
+  arcane:
+    image: ghcr.io/getarcaneapp/manager:latest
+    ports:
+      - "3552:3552"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - arcane-data:/app/data
+      - ${HOME}/arcane/projects:${HOME}/arcane/projects
+    environment:
+      APP_URL: http://localhost:3552
+      ENCRYPTION_KEY: ${ARCANE_ENCRYPTION_KEY}
+      PROJECTS_DIRECTORY: ${HOME}/arcane/projects
+      ANALYTICS_DISABLED: "true"   # Arcane sends usage analytics unless this is set
+    cgroup: host
+    restart: unless-stopped
+
+volumes:
+  arcane-data:</code></pre>
+        <p>Run <code>compose up -d</code> in <code>~/arcane</code>, open <a href="http://localhost:3552">localhost:3552</a>, and sign in as <code>arcane</code> with password <code>arcane-admin</code>. Arcane asks you to change it.</p>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-dockge" aria-labelledby="t-dockge" tabindex="0">
+        <h3 class="no-js">Dockge</h3>
+        <p><a href="https://github.com/louislam/dockge">Dockge</a> focuses on Compose stacks: write, start, stop, and update them, with live logs and a terminal. Each stack stays a plain folder with a <code>compose.yaml</code>, so <code>compose</code> in that folder sees the same project. MIT licensed.</p>
+        <pre class="block"><button type="button" class="copy">Copy</button><code>mkdir -p ~/dockge/stacks && cd ~/dockge</code></pre>
+        <p>Save this as <code>~/dockge/compose.yaml</code>:</p>
+        <pre class="block"><button type="button" class="copy">Copy</button><code>services:
+  dockge:
+    image: louislam/dockge:1
+    ports:
+      - "5001:5001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+      - ${HOME}/dockge/stacks:${HOME}/dockge/stacks
+    environment:
+      DOCKGE_STACKS_DIR: ${HOME}/dockge/stacks
+    restart: unless-stopped</code></pre>
+        <p>Run <code>compose up -d</code> in <code>~/dockge</code>, open <a href="http://localhost:5001">localhost:5001</a>, and create your admin account.</p>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-other" aria-labelledby="t-other" tabindex="0">
+        <h3 class="no-js">Other</h3>
+        <p>Anything that speaks the Docker API can manage your Compose projects, through the Docker socket the plugin provides.</p>
+        <p><strong>Apps on your Mac</strong>, such as the <code>docker</code> CLI, lazydocker, VS Code’s Container Tools, JetBrains IDEs, and Testcontainers, connect through <code>DOCKER_HOST</code>. Add this to your shell profile:</p>
+        <pre class="block"><button type="button" class="copy">Copy</button><code>export DOCKER_HOST="$(compose --socket-path)"</code></pre>
+        <p>For an app that has its own Docker connection setting, paste the address <code>compose --socket-path</code> prints. The socket listens once any <code>compose</code> command has run since you logged in, and your shell profile takes care of that.</p>
+        <p><strong>Web dashboards</strong>, such as Portainer or the log viewer Dozzle, run like Arcane and Dockge above: mount <code>/var/run/docker.sock</code> in their <code>compose.yaml</code> and publish their port.</p>
+      </div>
+    </div>
+
+    <p class="aside">A running dashboard counts as activity, so the machine won’t shut itself down while one is up.</p>
   </div>
 </section>
 

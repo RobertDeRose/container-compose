@@ -27,9 +27,9 @@ document.addEventListener('click', async (event) => {
   setTimeout(() => { button.textContent = 'Copy'; }, 1600);
 });
 
-// Install method tabs, with arrow-key navigation.
-(() => {
-  const tabs = [...document.querySelectorAll('[role="tab"]')];
+// Tab sets (install routes, dashboards), each with arrow-key navigation.
+document.querySelectorAll('.tabs').forEach((set) => {
+  const tabs = [...set.querySelectorAll('[role="tab"]')];
   const select = (tab) => {
     tabs.forEach((t) => {
       const on = t === tab;
@@ -50,4 +50,4 @@ document.addEventListener('click', async (event) => {
       next.focus();
     });
   });
-})();
+});

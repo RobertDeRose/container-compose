@@ -466,6 +466,12 @@ html:not(.js) .tablist { display: none; }
 .limits ul { color: var(--hull); padding-left: 1.15rem; margin: 1rem 0 0; }
 .limits li { margin-bottom: 0.4rem; }
 
+/* Dashboards */
+
+#dashboards { background: var(--paper); }
+#dashboards .tablist button[aria-selected="true"] { color: var(--paper); }
+.aside { color: var(--hull); font-size: 0.95rem; margin: 2rem 0 0; max-width: 52rem; }
+
 /* Footer */
 
 .foot { background: var(--paper); border-top: 1px solid var(--rule); padding: 2.5rem 0 3rem; }
