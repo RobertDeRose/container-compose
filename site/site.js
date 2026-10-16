@@ -18,13 +18,20 @@ document.addEventListener('click', async (event) => {
   if (!button) return;
   const holder = button.closest('[data-copy]');
   const text = holder ? holder.dataset.copy : button.parentElement.querySelector('code').textContent;
+  // The live region tells screen readers; the label change shows everyone else.
+  const status = document.getElementById('copy-status');
   try {
     await navigator.clipboard.writeText(text);
     button.textContent = 'Copied';
+    status.textContent = 'Copied to clipboard';
   } catch {
     button.textContent = 'Copy failed';
+    status.textContent = 'Copy failed. Select the text and copy it instead.';
   }
-  setTimeout(() => { button.textContent = 'Copy'; }, 1600);
+  setTimeout(() => {
+    button.textContent = 'Copy';
+    status.textContent = '';
+  }, 1600);
 });
 
 // Tab sets (install routes, dashboards), each with arrow-key navigation.
@@ -43,9 +50,15 @@ document.querySelectorAll('.tabs').forEach((set) => {
   tabs.forEach((tab, i) => {
     tab.addEventListener('click', () => select(tab));
     tab.addEventListener('keydown', (event) => {
-      const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
-      if (!step) return;
-      const next = tabs[(i + step + tabs.length) % tabs.length];
+      const target = {
+        ArrowRight: (i + 1) % tabs.length,
+        ArrowLeft: (i - 1 + tabs.length) % tabs.length,
+        Home: 0,
+        End: tabs.length - 1,
+      }[event.key];
+      if (target === undefined) return;
+      event.preventDefault();
+      const next = tabs[target];
       select(next);
       next.focus();
     });

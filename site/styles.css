@@ -9,9 +9,16 @@
   /* Behind white text: 5.4:1, where --red is only 4.4:1. */
   --red-fill: #c0392f;
   --red-fill-hover: #a83026;
-  --steel: #4a535c;
-  --light: #c3c9cf;
-  --blue: #2a6fc9;
+  --blue: #2563b8;
+  --on-accent: #fff;
+  /* Container faces in the hero yard and diagram, the same in both themes.
+     Each keeps its label at 4.5:1 or better. */
+  --box-red: #c0392f;
+  --box-steel: #4a535c;
+  --box-light: #c3c9cf;
+  --box-light-ink: #1d2730;
+  --box-blue: #2a6fc9;
+  --term-chrome: #3a444d;
   --term-bg: #1a2128;
   --term-ink: #dfe5ea;
   --term-dim: #8a96a1;
@@ -35,8 +42,6 @@
     --rule: #34404a;
     --red: #e65a4f;
     --red-ink: #ff8a80;
-    --steel: #5e6871;
-    --light: #9aa3ab;
     --blue: #5b98e6;
     --term-bg: #0f1418;
     --ground: #3a444d;
@@ -51,8 +56,6 @@
   --rule: #34404a;
   --red: #e65a4f;
   --red-ink: #ff8a80;
-  --steel: #5e6871;
-  --light: #9aa3ab;
   --blue: #5b98e6;
   --term-bg: #0f1418;
   --ground: #3a444d;
@@ -165,7 +168,7 @@ h1 code { font-size: 0.82em; background: none; padding: 0; letter-spacing: -0.04
 
 .copy {
   font: 600 0.8rem var(--sans);
-  background: var(--red-fill); color: #fff;
+  background: var(--red-fill); color: var(--on-accent);
   border: 0; border-radius: 5px;
   padding: 0.45rem 0.75rem;
   cursor: pointer;
@@ -191,7 +194,7 @@ h1 code { font-size: 0.82em; background: none; padding: 0; letter-spacing: -0.04
   border-bottom: 1px solid rgb(255 255 255 / 0.07);
   font: 0.78rem var(--mono); color: var(--term-dim);
 }
-.term-bar i { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: #3a444d; }
+.term-bar i { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--term-chrome); }
 .term-bar span { margin-left: auto; }
 .term-body {
   margin: 0; padding: 1.1rem 1.2rem 1.3rem;
@@ -224,7 +227,7 @@ h1 code { font-size: 0.82em; background: none; padding: 0; letter-spacing: -0.04
       rgb(0 0 0 / 0.14) 9px 12px,
       transparent 12px 16px),
     var(--face);
-  color: #fff;
+  color: var(--on-accent);
   padding: 0.9rem 1rem;
   display: flex; flex-direction: column; justify-content: flex-end;
 }
@@ -236,11 +239,11 @@ h1 code { font-size: 0.82em; background: none; padding: 0; letter-spacing: -0.04
 .box small { font: 0.75rem var(--mono); opacity: 0.85; margin-top: 0.35rem; }
 .box:nth-child(2) { height: clamp(4.5rem, 10vw, 7.5rem); }
 .box:nth-child(4) { height: clamp(5rem, 11vw, 8.25rem); }
-.c-red { --face: var(--red); background-color: var(--red); }
-.c-steel { --face: #4a535c; background-color: #4a535c; }
-.c-light { --face: #c3c9cf; background-color: #c3c9cf; }
-.c-blue { --face: var(--blue); background-color: var(--blue); }
-.box.c-light { color: #1d2730; }
+.c-red { --face: var(--box-red); background-color: var(--box-red); }
+.c-steel { --face: var(--box-steel); background-color: var(--box-steel); }
+.c-light { --face: var(--box-light); background-color: var(--box-light); }
+.c-blue { --face: var(--box-blue); background-color: var(--box-blue); }
+.box.c-light { color: var(--box-light-ink); }
 .yard::after {
   content: ""; display: block; height: 10px;
   background: var(--ground);
@@ -411,7 +414,7 @@ thead th {
 tbody th { font-weight: 600; color: var(--hull); width: 22%; }
 td { color: var(--ink); }
 .us { background: color-mix(in srgb, var(--red) 9%, var(--paper)); }
-thead .us { background: var(--red-fill); color: #fff; border-bottom-color: var(--red-fill); border-radius: 6px 6px 0 0; }
+thead .us { background: var(--red-fill); color: var(--on-accent); border-bottom-color: var(--red-fill); border-radius: 6px 6px 0 0; }
 tbody tr:last-child .us { border-radius: 0 0 6px 6px; }
 
 .fit {
