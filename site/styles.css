@@ -473,3 +473,5 @@ html:not(.js) .tablist { display: none; }
 .foot p { margin: 0; }
 .foot p:first-child { display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem; font-weight: 600; }
 .foot .fine { margin-top: 0.6rem; }
+.foot .made { margin-top: 0.25rem; }
+.foot .made a { color: inherit; }
