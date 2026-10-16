@@ -335,6 +335,8 @@ compose up -d</code></pre>
         <li>Projects and bind mounts must be under your home folder.</li>
         <li>All projects share one machine, so give projects distinct names if they would collide.</li>
         <li>UDP ports aren’t forwarded to <code>localhost</code>.</li>
+        <li>A port another Mac app already uses isn’t forwarded, so <code>localhost</code> reaches that app instead. AirPlay Receiver holds 5000 and 7000; pick other ports or turn it off.</li>
+        <li>Forwarding finds published ports through Docker’s userland proxy, which is on by default. If you disable it, reach services through the machine’s address instead.</li>
         <li>Your host Docker credentials and SSH agent aren’t reused inside the machine.</li>
         <li>Deleting the machine with <code>container machine delete</code> removes all Docker data, including volumes.</li>
       </ul>
