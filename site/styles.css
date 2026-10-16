@@ -118,6 +118,20 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .top nav a { color: var(--hull); text-decoration: none; }
 .top nav a:hover { color: var(--ink); }
 .top nav .nav-gh { color: var(--ink); font-weight: 600; }
+.top-inner nav { margin-left: auto; }
+
+/* Shows the theme a click switches to: a moon in light mode, a sun in dark. */
+.theme-toggle {
+  display: grid; place-items: center;
+  width: 2.25rem; height: 2.25rem; flex: none;
+  color: var(--ink); background: transparent;
+  border: 1px solid var(--rule); border-radius: 50%;
+  cursor: pointer;
+}
+.theme-toggle:hover { background: var(--paper); }
+.theme-toggle .i-sun, .theme-toggle[data-current="dark"] .i-moon { display: none; }
+.theme-toggle[data-current="dark"] .i-sun { display: block; }
+html:not(.js) .theme-toggle { display: none; }
 @media (max-width: 40rem) {
   .top nav a:not(.nav-gh):not([href="#install"]) { display: none; }
   .brand span { display: none; }

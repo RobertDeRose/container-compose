@@ -12,6 +12,27 @@
   requestAnimationFrame(() => root.classList.add('play'));
 })();
 
+// Theme toggle: follows the system until clicked, then remembers the choice.
+(() => {
+  const root = document.documentElement;
+  const button = document.querySelector('.theme-toggle');
+  const system = matchMedia('(prefers-color-scheme: dark)');
+  const current = () => root.dataset.theme || (system.matches ? 'dark' : 'light');
+  const show = () => {
+    const theme = current();
+    button.dataset.current = theme;
+    button.setAttribute('aria-label', `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`);
+  };
+  button.addEventListener('click', () => {
+    const next = current() === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    try { localStorage.setItem('theme', next); } catch {}
+    show();
+  });
+  system.addEventListener('change', show);
+  show();
+})();
+
 // Copy buttons copy the command next to them.
 document.addEventListener('click', async (event) => {
   const button = event.target.closest('.copy');
