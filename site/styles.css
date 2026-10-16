@@ -427,9 +427,17 @@ thead th {
 }
 tbody th { font-weight: 600; color: var(--hull); width: 22%; }
 td { color: var(--ink); }
-.us { background: color-mix(in srgb, var(--red) 9%, var(--paper)); }
-thead .us { background: var(--red-fill); color: var(--on-accent); border-bottom-color: var(--red-fill); border-radius: 6px 6px 0 0; }
-tbody tr:last-child .us { border-radius: 0 0 6px 6px; }
+/* The highlighted column is a card framed in the header's red. Inset
+   shadows draw the frame because collapsed borders would merge with the
+   neighbouring cells' borders. */
+.us {
+  background: var(--paper);
+  box-shadow: inset 2px 0 var(--red-fill), inset -2px 0 var(--red-fill);
+}
+thead .us { background: var(--red-fill); color: var(--on-accent); border-bottom-color: var(--red-fill); }
+tbody tr:last-child .us {
+  box-shadow: inset 2px 0 var(--red-fill), inset -2px 0 var(--red-fill), inset 0 -2px var(--red-fill);
+}
 
 .fit {
   display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem;
