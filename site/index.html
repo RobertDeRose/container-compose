@@ -289,20 +289,23 @@ compose exec db psql</code></pre>
       </div>
 
       <div class="panel" role="tabpanel" id="p-brew" aria-labelledby="t-brew" tabindex="0">
+        <h3 class="no-js">Homebrew</h3>
         <p>Installs <code>container</code> too if it’s missing, and adds a shorter <code>compose</code> command that keeps the plugin registered across <code>brew upgrade</code>.</p>
         <pre class="block"><button type="button" class="copy">Copy</button><code>brew install RobertDeRose/tap/container-compose-plugin
 container system start
 compose --help</code></pre>
       </div>
 
-      <div class="panel" role="tabpanel" id="p-mise" aria-labelledby="t-mise" tabindex="0" hidden>
+      <div class="panel" role="tabpanel" id="p-mise" aria-labelledby="t-mise" tabindex="0">
+        <h3 class="no-js">mise</h3>
         <p>Installs <code>container</code> and the plugin with no elevated privileges, and adds the <code>compose</code> command. It registers the plugin with mise’s <code>container</code> on first use, and again after <code>mise upgrade</code>.</p>
         <pre class="block"><button type="button" class="copy">Copy</button><code>mise use -g container 'github:RobertDeRose/container-compose-plugin[bin_path=cli,strip_components=1]'
 container system start
 compose --help</code></pre>
       </div>
 
-      <div class="panel" role="tabpanel" id="p-pkg" aria-labelledby="t-pkg" tabindex="0" hidden>
+      <div class="panel" role="tabpanel" id="p-pkg" aria-labelledby="t-pkg" tabindex="0">
+        <h3 class="no-js">Apple’s installer</h3>
         <p>Apple’s package installs under <code>/usr/local</code>, so the installer asks for your password. Download with <code>gh</code> or <code>curl</code>, not a browser: release builds aren’t notarized.</p>
         <pre class="block"><button type="button" class="copy">Copy</button><code>gh release download --repo RobertDeRose/container-compose-plugin --pattern '*-darwin-arm64.tar.gz*'
 shasum -a 256 -c container-compose-plugin-*-darwin-arm64.tar.gz.sha256
@@ -312,7 +315,8 @@ container system start
         <p class="note">This route doesn’t add the <code>compose</code> command. Type <code>container compose</code> wherever this page says <code>compose</code>, and run the installer again after upgrading <code>container</code>.</p>
       </div>
 
-      <div class="panel" role="tabpanel" id="p-src" aria-labelledby="t-src" tabindex="0" hidden>
+      <div class="panel" role="tabpanel" id="p-src" aria-labelledby="t-src" tabindex="0">
+        <h3 class="no-js">From source</h3>
         <p>Needs Swift 6.2 or newer.</p>
         <pre class="block"><button type="button" class="copy">Copy</button><code>git clone https://github.com/RobertDeRose/container-compose-plugin.git
 cd container-compose-plugin

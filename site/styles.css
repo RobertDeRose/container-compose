@@ -427,6 +427,10 @@ tbody tr:last-child .us { border-radius: 0 0 6px 6px; }
 /* Install */
 
 .tabs { margin-top: 2.5rem; }
+/* Without the script every panel shows, each under its own heading. */
+html:not(.js) .tablist { display: none; }
+.js .panel .no-js { display: none; }
+.panel .no-js { margin: 1rem 0 0.75rem; }
 .tablist { display: flex; flex-wrap: wrap; gap: 0.35rem; border-bottom: 2px solid var(--ink); }
 .tablist button {
   font: 600 0.95rem var(--sans);

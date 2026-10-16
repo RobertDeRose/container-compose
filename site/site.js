@@ -38,6 +38,8 @@ document.addEventListener('click', async (event) => {
       document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
     });
   };
+  // Panels ship visible so the page works without this script.
+  select(tabs.find((t) => t.getAttribute('aria-selected') === 'true') || tabs[0]);
   tabs.forEach((tab, i) => {
     tab.addEventListener('click', () => select(tab));
     tab.addEventListener('keydown', (event) => {
