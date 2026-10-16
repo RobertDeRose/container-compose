@@ -467,6 +467,13 @@ CI runs `make test` on macOS and Linux. Linux builds only the portable
 libraries require macOS. Local builds are ad-hoc signed; set
 `CODE_SIGN_IDENTITY` to sign with a certificate.
 
+### Website
+
+`site/` holds the project's product page: static HTML, CSS, and JavaScript
+with no build step. The `Pages` workflow publishes it to GitHub Pages on pushes
+to `main` that change `site/`. Preview it locally with
+`python3 -m http.server --directory site`.
+
 ### Releases
 
 Every push to `main` runs the release workflow, which uses

@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>container compose</title>
+<meta name="description" content="Docker Compose for Apple's container CLI on macOS. Run unmodified Compose projects in one lightweight Linux machine, with ports on localhost and a Docker socket for your tools.">
+<meta property="og:title" content="container compose">
+<meta property="og:description" content="Docker Compose for Apple's container CLI on macOS.">
+<meta property="og:image" content="assets/icon.png">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap top-inner">
+    <a class="brand" href="#">
+      <img src="assets/favicon.png" alt="" width="32" height="32">
+      <span>container compose</span>
+    </a>
+    <nav aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#compare">Compare</a>
+      <a href="#install">Install</a>
+      <a class="nav-gh" href="https://github.com/RobertDeRose/container-compose-plugin">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <h1>Docker Compose for Apple’s <code>container</code>.</h1>
+      <p class="lede">Apple’s <code>container</code> runs Linux containers natively on your Mac, but it has no Compose. This plugin adds a <code>compose</code> command: your existing <code>compose.yaml</code> files, unchanged, running on the real Docker Engine inside one lightweight Linux machine.</p>
+      <div class="cta">
+        <div class="cmd" data-copy="brew install RobertDeRose/tap/container-compose-plugin">
+          <code><span class="prompt">$</span>&nbsp;brew install RobertDeRose/tap/<wbr><span class="nowrap">container-compose-plugin</span></code>
+          <button type="button" class="copy" aria-label="Copy install command">Copy</button>
+        </div>
+        <p class="cta-links"><a href="#install">Other ways to install</a> <a href="https://github.com/RobertDeRose/container-compose-plugin">View the source</a></p>
+      </div>
+      <p class="fine">Free and open source under Apache-2.0. macOS 15 or newer on Apple silicon.</p>
+    </div>
+
+    <figure class="term" aria-label="Example terminal session">
+      <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i><span>~/projects/my-app</span></div>
+      <pre class="term-body"><code><span class="ln"><span class="prompt">$</span> compose up -d</span>
+<span class="ln dim">[+] Running 5/5</span>
+<span class="ln"> <b class="ok">✔</b> Network my-app_default    <em>Created</em></span>
+<span class="ln" data-box="db"> <b class="ok">✔</b> Container my-app-db-1     <em>Started</em></span>
+<span class="ln" data-box="cache"> <b class="ok">✔</b> Container my-app-cache-1  <em>Started</em></span>
+<span class="ln" data-box="api"> <b class="ok">✔</b> Container my-app-api-1    <em>Started</em></span>
+<span class="ln" data-box="web"> <b class="ok">✔</b> Container my-app-web-1    <em>Started</em></span>
+<span class="ln"><span class="prompt">$</span> curl localhost:8080/health</span>
+<span class="ln">{"status":"ok"}</span></code></pre>
+    </figure>
+  </div>
+
+  <div class="yard" aria-hidden="true">
+    <div class="wrap yard-row">
+      <div class="box c-red" data-box="db"><span>db</span><small>postgres:17</small></div>
+      <div class="box c-steel" data-box="cache"><span>cache</span><small>redis:7</small></div>
+      <div class="box c-light" data-box="api"><span>api</span><small>build: ./api</small></div>
+      <div class="box c-blue" data-box="web"><span>web</span><small>nginx:1.27</small></div>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="section">
+  <div class="wrap">
+    <h2>Everything Compose does, on the runtime Apple ships.</h2>
+    <p class="intro">The plugin doesn’t reimplement or translate Compose. It runs the real <code>docker compose</code> in a Linux machine managed by <code>container</code>, and handles the parts that make it feel local.</p>
+
+    <div class="leads">
+      <article class="lead">
+        <h3>Your Compose files work as they are</h3>
+        <p>Every subcommand, flag, profile, and file format works, because it is Docker Compose. No conversion step, no unsupported keys.</p>
+        <pre><code>compose up -d
+compose logs -f api
+compose exec db psql</code></pre>
+      </article>
+      <article class="lead">
+        <h3>Published ports on localhost</h3>
+        <p>TCP ports your services publish appear on <code>127.0.0.1</code> and <code>::1</code> within seconds, the way Docker Desktop does it. Loopback only, never your LAN.</p>
+        <pre><code>ports:
+  - "8080:80"   # open localhost:8080</code></pre>
+      </article>
+      <article class="lead">
+        <h3>A Docker socket for your other tools</h3>
+        <p>Point the <code>docker</code> CLI, your IDE, or Testcontainers at the Docker Engine inside the machine. Fast enough to run in every new shell, and it doesn’t boot the machine until a tool connects.</p>
+        <pre><code>export DOCKER_HOST=<wbr><span class="nowrap">"$(compose --socket-path)"</span></code></pre>
+      </article>
+    </div>
+
+    <dl class="more">
+      <div>
+        <dt>One machine for every project</dt>
+        <dd>All projects share a machine named <code>compose</code>. Images, volumes, networks, and build cache survive <code>compose down</code> and restarts.</dd>
+      </div>
+      <div>
+        <dt>Your home folder at the same path</dt>
+        <dd>Your macOS home directory is mounted read-write at the same path inside the machine, so bind mounts like <code>./src:/app</code> just work.</dd>
+      </div>
+      <div>
+        <dt>Shuts itself off when idle</dt>
+        <dd>Set an idle timeout and the machine powers off after Docker goes quiet. The next command boots it again.</dd>
+      </div>
+      <div>
+        <dt>Feels native to <code>container</code></dt>
+        <dd>Compose help reads as <code>container compose</code>, and bash, zsh, and fish completions are generated without booting anything.</dd>
+      </div>
+      <div>
+        <dt>Never touches your data on its own</dt>
+        <dd>The plugin records which machine it created and refuses to adopt one it didn’t. Installing, upgrading, or removing it never deletes the machine.</dd>
+      </div>
+      <div>
+        <dt>Nothing installed behind your back</dt>
+        <dd>No daemon is registered and no Apple service is replaced or patched. It’s a plugin directory with one executable in it.</dd>
+      </div>
+    </dl>
+  </div>
+</section>
+
+<div class="corrugate" aria-hidden="true"></div>
+
+<section id="how" class="section">
+  <div class="wrap how-grid">
+    <div>
+      <h2>How a command runs</h2>
+      <p class="intro">A thin client over the public APIs of <code>container</code>. Your first command creates the machine; every later one reuses it.</p>
+      <ol class="steps">
+        <li><code>compose</code> makes sure the plugin is registered with your current <code>container</code>, then hands off to <code>container compose</code>.</li>
+        <li><code>container</code> finds the plugin and passes it your arguments.</li>
+        <li>The plugin checks your working directory is under your home folder and picks the environment to forward.</li>
+        <li>It starts the background forwarder for ports and the Docker socket, if one isn’t running.</li>
+        <li>It creates the <code>compose</code> machine on first use, or verifies the existing one is its own.</li>
+        <li>It boots the machine if needed and waits for Docker.</li>
+        <li>It runs <code>docker compose</code> inside the machine, relaying input, output, terminal size, and signals.</li>
+      </ol>
+    </div>
+
+    <figure class="diagram" aria-label="Your Mac runs compose, which drives a Linux machine running Docker Engine and your containers. Ports and the Docker socket are forwarded back to your Mac.">
+      <div class="d-host">
+        <p class="d-title">Your Mac</p>
+        <div class="d-row">
+          <div class="d-chip">Terminal<br><code>compose up</code></div>
+          <div class="d-chip">IDE, Testcontainers<br><code>DOCKER_HOST</code></div>
+          <div class="d-chip">Browser<br><code>localhost:8080</code></div>
+        </div>
+        <div class="d-link" aria-hidden="true"><span>Apple <code>container</code> machine API</span></div>
+        <div class="d-vm">
+          <p class="d-title">Linux machine <code>compose</code></p>
+          <div class="d-row">
+            <div class="d-chip solid">Docker Engine</div>
+            <div class="d-chip solid">Docker Compose</div>
+            <div class="d-chip solid">Buildx</div>
+          </div>
+          <div class="d-boxes" aria-hidden="true"><i class="c-red"></i><i class="c-steel"></i><i class="c-light"></i><i class="c-blue"></i></div>
+          <p class="d-note">Your home folder, mounted at the same path</p>
+        </div>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<section id="compare" class="section compare">
+  <div class="wrap">
+    <h2>How it compares</h2>
+    <p class="intro">Docker Desktop and Podman Desktop are full desktop apps that bring their own virtual machine. If you already use Apple’s <code>container</code>, or want the least software running on your Mac, this plugin adds Compose and nothing else.</p>
+
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Comparison table">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col"><span class="sr">Feature</span></th>
+            <th scope="col" class="us">container compose</th>
+            <th scope="col">Docker Desktop</th>
+            <th scope="col">Podman Desktop</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Cost</th>
+            <td class="us">Free for everyone</td>
+            <td>Paid subscription for larger companies</td>
+            <td>Free for everyone</td>
+          </tr>
+          <tr>
+            <th scope="row">License</th>
+            <td class="us">Apache-2.0</td>
+            <td>Proprietary</td>
+            <td>Apache-2.0</td>
+          </tr>
+          <tr>
+            <th scope="row">What you install</th>
+            <td class="us">A CLI plugin for <code>container</code></td>
+            <td>A desktop app with background services</td>
+            <td>A desktop app plus the Podman CLI</td>
+          </tr>
+          <tr>
+            <th scope="row">Virtual machine</th>
+            <td class="us">Apple’s <code>container</code> machine</td>
+            <td>Docker’s own Linux VM</td>
+            <td>A Podman machine</td>
+          </tr>
+          <tr>
+            <th scope="row">Compose engine</th>
+            <td class="us">Docker Compose on Docker Engine</td>
+            <td>Docker Compose on Docker Engine</td>
+            <td>An external Compose provider against Podman</td>
+          </tr>
+          <tr>
+            <th scope="row">Ports on localhost</th>
+            <td class="us">TCP</td>
+            <td>TCP and UDP</td>
+            <td>TCP and UDP</td>
+          </tr>
+          <tr>
+            <th scope="row">Docker API socket</th>
+            <td class="us">Yes, opt-in, private to your user</td>
+            <td>Yes</td>
+            <td>Yes, Docker-compatible</td>
+          </tr>
+          <tr>
+            <th scope="row">Graphical interface</th>
+            <td class="us">None, terminal only</td>
+            <td>Yes</td>
+            <td>Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Kubernetes</th>
+            <td class="us">Built into <code>container</code> as <code>container k8s</code></td>
+            <td>Built in</td>
+            <td>Through Kind or Minikube</td>
+          </tr>
+          <tr>
+            <th scope="row">Platforms</th>
+            <td class="us">macOS on Apple silicon</td>
+            <td>macOS, Windows, Linux</td>
+            <td>macOS, Windows, Linux</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="fit">
+      <div>
+        <h3>Choose container compose if</h3>
+        <ul>
+          <li>You already run Apple’s <code>container</code> and miss Compose.</li>
+          <li>You want Compose without a desktop app or a license to track.</li>
+          <li>Your projects need exact Docker Compose behavior, not a reimplementation.</li>
+          <li>You live in the terminal and don’t need a dashboard.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Choose something else if</h3>
+        <ul>
+          <li>You need a GUI to browse containers, images, and logs.</li>
+          <li>Your team works across Windows, Linux, and Intel Macs.</li>
+          <li>Your services publish UDP ports to the host.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="corrugate" aria-hidden="true"></div>
+
+<section id="install" class="section">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="intro">Pick the route that matches how you installed <code>container</code>. Homebrew and mise also give you the <code>compose</code> command, which re-registers the plugin whenever <code>container</code> is upgraded, so it keeps working.</p>
+
+    <div class="tabs">
+      <div class="tablist" role="tablist" aria-label="Install method">
+        <button type="button" role="tab" id="t-brew" aria-controls="p-brew" aria-selected="true">Homebrew</button>
+        <button type="button" role="tab" id="t-mise" aria-controls="p-mise" aria-selected="false" tabindex="-1">mise</button>
+        <button type="button" role="tab" id="t-pkg" aria-controls="p-pkg" aria-selected="false" tabindex="-1">Apple’s installer</button>
+        <button type="button" role="tab" id="t-src" aria-controls="p-src" aria-selected="false" tabindex="-1">From source</button>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-brew" aria-labelledby="t-brew" tabindex="0">
+        <p>Installs <code>container</code> too if it’s missing, and adds a shorter <code>compose</code> command that keeps the plugin registered across <code>brew upgrade</code>.</p>
+        <pre class="block"><button type="button" class="copy">Copy</button><code>brew install RobertDeRose/tap/container-compose-plugin
+container system start
+compose --help</code></pre>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-mise" aria-labelledby="t-mise" tabindex="0" hidden>
+        <p>Installs <code>container</code> and the plugin with no elevated privileges, and adds the <code>compose</code> command. It registers the plugin with mise’s <code>container</code> on first use, and again after <code>mise upgrade</code>.</p>
+        <pre class="block"><button type="button" class="copy">Copy</button><code>mise use -g container 'github:RobertDeRose/container-compose-plugin[bin_path=cli,strip_components=1]'
+container system start
+compose --help</code></pre>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-pkg" aria-labelledby="t-pkg" tabindex="0" hidden>
+        <p>Apple’s package installs under <code>/usr/local</code>, so the installer asks for your password. Download with <code>gh</code> or <code>curl</code>, not a browser: release builds aren’t notarized.</p>
+        <pre class="block"><button type="button" class="copy">Copy</button><code>gh release download --repo RobertDeRose/container-compose-plugin --pattern '*-darwin-arm64.tar.gz*'
+shasum -a 256 -c container-compose-plugin-*-darwin-arm64.tar.gz.sha256
+tar -xzf container-compose-plugin-*-darwin-arm64.tar.gz
+container system start
+./compose/install.sh</code></pre>
+        <p class="note">This route doesn’t add the <code>compose</code> command. Type <code>container compose</code> wherever this page says <code>compose</code>, and run the installer again after upgrading <code>container</code>.</p>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-src" aria-labelledby="t-src" tabindex="0" hidden>
+        <p>Needs Swift 6.2 or newer.</p>
+        <pre class="block"><button type="button" class="copy">Copy</button><code>git clone https://github.com/RobertDeRose/container-compose-plugin.git
+cd container-compose-plugin
+container system start
+make install</code></pre>
+        <p class="note">This route doesn’t add the <code>compose</code> command. Type <code>container compose</code> wherever this page says <code>compose</code>, and run <code>make install REPLACE=1</code> again after upgrading <code>container</code>.</p>
+      </div>
+    </div>
+
+    <div class="first-run">
+      <h3>Then, from any project in your home folder</h3>
+      <pre class="block"><button type="button" class="copy">Copy</button><code>cd ~/projects/my-app
+compose up -d</code></pre>
+      <p>The first run pulls the machine image and boots the machine, so it takes longer. After that, commands start in the already-running machine.</p>
+    </div>
+
+    <details class="limits">
+      <summary>Good to know before you start</summary>
+      <ul>
+        <li>Projects and bind mounts must be under your home folder.</li>
+        <li>All projects share one machine, so give projects distinct names if they would collide.</li>
+        <li>UDP ports aren’t forwarded to <code>localhost</code>.</li>
+        <li>Your host Docker credentials and SSH agent aren’t reused inside the machine.</li>
+        <li>Deleting the machine with <code>container machine delete</code> removes all Docker data, including volumes.</li>
+      </ul>
+    </details>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-inner">
+    <img src="assets/icon.png" alt="" width="72" height="72">
+    <div>
+      <p><a href="https://github.com/RobertDeRose/container-compose-plugin">Source</a> <a href="https://github.com/RobertDeRose/container-compose-plugin/releases">Releases</a> <a href="https://github.com/RobertDeRose/container-compose-plugin/blob/main/docs/operations.md">Operations guide</a> <a href="https://github.com/RobertDeRose/container-compose-plugin/blob/main/docs/architecture.md">Architecture</a></p>
+      <p class="fine">Apache-2.0. Not maintained or endorsed by Apple, Docker, or the Podman project.</p>
+    </div>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+</body>
+</html>
