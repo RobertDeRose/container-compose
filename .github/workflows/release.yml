@@ -2,6 +2,8 @@ name: Release
 on:
   push:
     branches: [main]
+  # Retries a release that stopped partway; the run finishes the latest tag.
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -10,13 +12,14 @@ concurrency:
 jobs:
   release:
     name: Release
+    # A manual run from another branch would only be skipped as stale below.
+    if: github.ref == 'refs/heads/main'
     # The plugin is a macOS executable, so the release build runs where it runs.
     runs-on: macos-26
     timeout-minutes: 60
+    # Every write (tag, release, Homebrew tap) uses the Robborg app token.
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+      contents: read
     steps:
       # Release tags must be pushed as Robborg to trigger the machine image
       # workflow. The same token publishes the formula to the Homebrew tap.
@@ -34,34 +37,26 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
         with:
-          node-version: lts/*
-          cache: npm
+          install: false
+          cache: false
+      # Only Cocogitto: the linters in mise.toml are not needed to release.
+      - name: Install release tooling
+        run: mise install --locked cocogitto
       - name: Check toolchain
         run: swift --version
-      - name: Install release tooling
-        run: npm clean-install
-      - name: Verify npm signatures
-        run: npm audit signatures
-      # semantic-release counts releases from the latest tag. The first
-      # release is measured from the root commit rather than defaulting to 1.0.0.
-      # Create this marker with the workflow token so it triggers no image run.
-      - name: Ensure initial release tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if git rev-parse -q --verify refs/tags/v0.0.0 >/dev/null; then
-            exit 0
-          fi
-          root_commit=$(git rev-list --max-parents=0 HEAD)
-          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-            -f ref=refs/tags/v0.0.0 -f sha="$root_commit"
-          git tag v0.0.0 "$root_commit"
-      # Derives the version from the commits, stamps it into the executable,
-      # builds and packages it, tags the commit, and publishes the release
-      # with the archive, its checksum, and generated notes (see package.json).
+      # Cocogitto picks the version from the commits since the latest tag, then
+      # the script stamps and packages the executable, pushes the tag, and
+      # publishes the release and Homebrew formula (see scripts/release.sh).
       - name: Release
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: npx semantic-release
+        run: |
+          # Do not release a stale commit if main advanced while this queued.
+          git fetch -q origin main
+          if [[ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]]; then
+            echo "main has advanced; the newer run will release it"
+            exit 0
+          fi
+          ./scripts/release.sh

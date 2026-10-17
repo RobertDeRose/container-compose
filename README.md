@@ -456,7 +456,7 @@ is also tagged `sha-<commit>`, and the run summary prints the digest to pin.
 
 ```bash
 make build      # release build of the compose executable
-make test       # swift test plus the installer test
+make test       # swift test plus the shell script tests
 make lint       # swift-format and shell syntax checks
 make stage      # build and stage dist/staging/compose for install or package
 make package    # architecture-specific tar.gz with checksum
@@ -467,9 +467,8 @@ CI runs `make test` on macOS and Linux. Linux builds only the portable
 libraries require macOS. Local builds are ad-hoc signed; set
 `CODE_SIGN_IDENTITY` to sign with a certificate.
 
-Swift comes from Xcode. Node.js is needed only for the release tooling in
-`package.json`; `mise install` provides the LTS release CI uses, as pinned in
-`mise.toml`.
+Swift comes from Xcode. `mise install` provides the remaining tools pinned in
+`mise.toml`: [Cocogitto](https://docs.cocogitto.io/) for releases.
 
 `mise install` also provides the linters that [hk](https://hk.jdx.dev/) runs
 from `hk.pkl`, and installs Git hooks that fix staged files and check commit
@@ -486,15 +485,29 @@ serves it at `http://localhost:8000`; set `PORT` to use another port.
 
 ### Releases
 
-Every push to `main` runs the release workflow, which uses
-[semantic-release](https://semantic-release.gitbook.io/) to derive the next
-version from the Conventional Commits since the last tag: `fix` releases a
-patch, `feat` a minor, and a `BREAKING CHANGE` footer a major. Other commit
-types do not release. The workflow stamps the version into the executable with
-`scripts/set-version.sh`, builds and packages it on macOS, tags `v<version>`,
-and publishes a GitHub release with the archive, its checksum, and notes
-generated from the commits. The checked-in version stays a development marker.
-Release builds are ad-hoc signed; notarization is not configured.
+Every push to `main` runs the release workflow, which runs
+`scripts/release.sh`. [Cocogitto](https://docs.cocogitto.io/) derives the next
+version from the Conventional Commits since the last tag (configured in
+`cog.toml`): `fix`, `perf`, and `revert` release a patch, `feat` a minor, and a
+breaking change a major. Below 1.0 the breaking marker changes nothing:
+`feat!` releases a minor, `fix!` a patch, and a breaking change of a type that
+does not release, such as `refactor!`, releases nothing. Other commit types do
+not release. The script stamps the version into the executable
+with `scripts/set-version.sh`, builds and packages it on macOS, tags
+`v<version>`, and publishes a GitHub release with the archive, its checksum,
+and notes generated from the commits. Nothing is committed; the checked-in
+version stays a development marker. Release builds are ad-hoc signed;
+notarization is not configured. `mise run release:preview` shows the version
+and notes the next release would publish, without changing anything.
+
+A release that stopped partway is finished by the next run. Before looking for
+a new version, each run checks the latest tag: if it has no GitHub release, or
+only a draft from an interrupted upload, the run rebuilds that tag's commit and
+publishes the release, then makes sure the Homebrew formula points at it,
+using the checksum uploaded with the release. Nothing new is released until the
+latest tag is finished. To retry without a new commit, run the release workflow
+from the Actions tab on `main`. The preview reports a latest tag that is still
+unpublished.
 
 The release requires the Robborg GitHub App and the `ROBBORG_CLIENT_ID`
 and `ROBBORG_PRIVATE_KEY` secrets. A tag pushed with the workflow

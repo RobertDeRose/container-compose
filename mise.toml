@@ -4,9 +4,8 @@
 # frameworks with the Swift 6.2+ toolchain from Xcode, the same toolchain CI
 # uses. A mise-installed Swift would shadow it.
 [tools]
-# Release tooling only (semantic-release in package.json), matching CI's lts/*.
-node = "lts"
-# Checks commit messages, which decide each release.
+# Release automation; see cog.toml and scripts/release.sh. Also checks commit
+# messages, which decide each release.
 cocogitto = "7.0.0"
 # Linting, run by hk from Git hooks and CI; see hk.pkl.
 actionlint = "1.7.12"
@@ -36,3 +35,7 @@ run = "hk fix --all"
 [tasks.site]
 description = "Preview the product site at http://localhost:8000 (set PORT to change it)"
 run = 'python3 -m http.server "${PORT:-8000}" --directory site'
+
+[tasks."release:preview"]
+description = "Show the version and notes the next release would publish, changing nothing"
+run = "./scripts/release.sh --dry-run"
