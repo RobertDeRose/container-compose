@@ -24,7 +24,9 @@ formula="$check/Formula/container-compose-plugin.rb"
 grep -q "version \"1.2.3\"" "$formula"
 grep -q "sha256 \"$sha\"" "$formula"
 grep -q "releases/download/v1.2.3/container-compose-plugin-1.2.3-darwin-arm64.tar.gz" "$formula"
-! grep -q "@VERSION@\|@SHA256@" "$formula"
+if grep -q "@VERSION@\|@SHA256@" "$formula"; then
+    echo 'Formula has unrendered placeholders.' >&2; exit 1
+fi
 # Publishing the same version again is a no-op, not an error.
 DIST_DIR="$root/dist" TAP_REMOTE="file://$root/tap.git" ./scripts/publish-homebrew.sh 1.2.3 | grep -q "already describes"
 # A malformed checksum file is refused.

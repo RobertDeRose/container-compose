@@ -32,7 +32,7 @@ if git diff --cached --quiet; then
 fi
 git commit -q -m "container-compose-plugin ${version}"
 # Other projects push to the same tap; rebase onto whatever landed meanwhile.
-for attempt in 1 2 3; do
+for _ in 1 2 3; do
     if git push -q origin HEAD:main; then
         echo "Published ${formula} for ${version} to ${tap_repository}"
         exit 0

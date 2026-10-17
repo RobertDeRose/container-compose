@@ -1,0 +1,61 @@
+amends "package://github.com/jdx/hk/releases/download/v2.7.0/hk@2.7.0#/Config.pkl"
+
+import "package://github.com/jdx/hk/releases/download/v2.7.0/hk@2.7.0#/Builtins.pkl"
+
+local linters = new Mapping<String, Step> {
+  ["actionlint"] = Builtins.actionlint
+  ["byte_order_marker"] = Builtins.byte_order_marker
+  ["check_added_large_files"] = (Builtins.check_added_large_files) {
+    // The README icon predates this check.
+    exclude = List("docs/assets/container-compose-icon.png")
+  }
+  ["check_case_conflict"] = Builtins.check_case_conflict
+  ["check_executables_have_shebangs"] = Builtins.check_executables_have_shebangs
+  ["check_merge_conflict"] = Builtins.check_merge_conflict
+  ["check_symlinks"] = Builtins.check_symlinks
+  ["detect_private_key"] = Builtins.detect_private_key
+  ["mise"] = Builtins.mise
+  ["mixed_line_ending"] = Builtins.mixed_line_ending
+  ["newlines"] = Builtins.newlines
+  ["pkl_format"] = Builtins.pkl_format
+  ["rumdl"] = Builtins.rumdl
+  ["shellcheck"] = Builtins.shellcheck
+  // Swift comes from Xcode, as for the build; the rules are in .swift-format.
+  // Like `make lint`, warnings are reported without failing the check.
+  ["swift_format"] = new Step {
+    glob = List("**/*.swift")
+    check = "swift format lint {{ files }}"
+    fix = "swift format --in-place {{ files }}"
+  }
+  ["tombi"] = Builtins.tombi
+  ["tombi_format"] = Builtins.tombi_format
+  ["trailing_whitespace"] = Builtins.trailing_whitespace
+  ["typos"] = Builtins.typos
+}
+
+default_branch = "main"
+fail_fast = false
+
+hooks {
+  ["pre-commit"] {
+    fix = true
+    stash = "git"
+    steps = linters
+  }
+  // Commit messages decide each release, so a malformed one is refused here
+  // rather than discovered by the release run.
+  ["commit-msg"] {
+    steps {
+      ["cocogitto"] {
+        check = "cog verify --file {{ commit_msg_file }}"
+      }
+    }
+  }
+  ["check"] {
+    steps = linters
+  }
+  ["fix"] {
+    fix = true
+    steps = linters
+  }
+}

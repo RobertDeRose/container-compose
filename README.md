@@ -471,6 +471,12 @@ Swift comes from Xcode. Node.js is needed only for the release tooling in
 `package.json`; `mise install` provides the LTS release CI uses, as pinned in
 `mise.toml`.
 
+`mise install` also provides the linters that [hk](https://hk.jdx.dev/) runs
+from `hk.pkl`, and installs Git hooks that fix staged files and check commit
+messages with [Cocogitto](https://docs.cocogitto.io/). `mise run check` runs
+every linter over the repository, as CI does; `mise run fix` applies their
+fixes.
+
 ### Website
 
 `site/` holds the project's product page: static HTML, CSS, and JavaScript
