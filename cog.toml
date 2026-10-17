@@ -1,0 +1,19 @@
+# Cocogitto derives each release from the Conventional Commits since the latest
+# tag; scripts/release.sh runs it. Only the types that bump a version release.
+from_latest_tag = true
+ignore_merge_commits = true
+tag_prefix = "v"
+branch_whitelist = ["main"]
+
+[commit_types]
+build = { omit_from_changelog = true }
+chore = { omit_from_changelog = true }
+ci = { omit_from_changelog = true }
+docs = { omit_from_changelog = true }
+feat = { changelog_title = "Added" }
+fix = { changelog_title = "Fixed" }
+perf = { changelog_title = "Performance", bump_patch = true }
+refactor = { changelog_title = "Changed" }
+revert = { changelog_title = "Reverted", bump_patch = true }
+style = { omit_from_changelog = true }
+test = { omit_from_changelog = true }

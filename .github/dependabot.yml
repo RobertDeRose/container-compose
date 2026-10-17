@@ -9,15 +9,6 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: "chore(tooling)"
-    groups:
-      release-tooling:
-        patterns: ["*"]
   - package-ecosystem: swift
     directory: /
     schedule:
