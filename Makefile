@@ -13,6 +13,7 @@ test:
 	./scripts/test-install.sh
 	./scripts/test-mise.sh
 	./scripts/test-homebrew.sh
+	./scripts/test-release.sh
 
 stage: build
 	./scripts/stage.sh

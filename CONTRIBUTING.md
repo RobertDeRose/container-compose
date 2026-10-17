@@ -23,7 +23,7 @@ and a running `container` host. Linux can build and test only the portable
 container system start
 mise install    # pinned linters and tools; installs the Git hooks
 make build      # release build of the compose executable
-make test       # swift test plus scripts/test-install.sh
+make test       # swift test plus the shell script tests
 make lint       # swift-format lint and shell syntax checks
 mise run check  # every linter over the whole repository (mise run fix applies fixes)
 make stage      # stage dist/staging/compose
