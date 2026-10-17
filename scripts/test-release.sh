@@ -7,6 +7,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 root=$(mktemp -d)
 trap 'rm -rf -- "$root"' EXIT
+# The user's Git configuration, such as commit or tag signing, must reach
+# neither the fixture nor the script under test.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 fail() {
     echo "Release check failed: $*" >&2
     exit 1
@@ -28,12 +31,16 @@ git clone -q "file://$root/tap.git" "$root/seed" 2>/dev/null
 git -C "$root/seed" commit -q --allow-empty -m seed
 git -C "$root/seed" push -q origin HEAD:main
 
-# Cocogitto: the next version comes from FAKE_NEXT; the notes name the tag.
+# Cocogitto: the next version comes from FAKE_NEXT; the notes name what they
+# cover: `--at <tag>`, a range, or with neither, every commit.
 cat >"$root/bin/mise" <<'EOF'
 #!/bin/bash
 case $4 in
     bump) echo "${FAKE_NEXT:-No conventional commit found to bump current version.}" ;;
-    changelog) [[ -z ${FAKE_CHANGELOG_FAIL:-} ]] || exit 1; printf '\n### Fixed\n\n- Notes for %s\n' "$6" ;;
+    changelog)
+        [[ -z ${FAKE_CHANGELOG_FAIL:-} ]] || exit 1
+        case $5 in --at) covers=$6 ;; --template) covers="all commits" ;; *) covers=$5 ;; esac
+        printf '\n### Fixed\n\n- Notes for %s\n' "$covers" ;;
 esac
 EOF
 # The build: the archive records the commit and version it was built from.
@@ -88,6 +95,11 @@ formula_version() {
 asset() { echo "$root/gh/$1/container-compose-plugin-${1#v}-darwin-arm64.tar.gz"; }
 built() { : >"$root/make.log"; }
 
+# Before the first release, a preview covers every commit and creates no tag.
+out=$(FAKE_NEXT=v0.1.0 release --dry-run) || fail "first preview: $out"
+grep -q 'Notes for all commits' <<<"$out" || fail "first preview did not cover every commit: $out"
+[[ -z $(git -C "$repo" tag -l) ]] || fail "a preview created a tag"
+
 # A tag pushed but never released is rebuilt from its own commit, not HEAD.
 commit "fix: one"
 push_tag v0.1.0
@@ -141,6 +153,7 @@ out=$(FAKE_NEXT=v0.5.0 release) || fail "finish then release: $out"
 [[ -f $(asset v0.4.0) && -f $(asset v0.5.0) ]] || fail "v0.4.0 and v0.5.0 were not both released"
 command git ls-remote --exit-code --tags "$RELEASE_REMOTE" refs/tags/v0.5.0 >/dev/null || fail "v0.5.0 was not pushed"
 [[ $(formula_version) == 0.5.0 ]] || fail "formula was not published for v0.5.0"
+grep -q 'Notes for v0.4.0..HEAD' "$root/gh/v0.5.0/.notes" || fail "v0.5.0 notes do not start at v0.4.0"
 
 # A preview reports unfinished work, even without GitHub, and changes nothing.
 git -C "$repo" checkout -q -- .
@@ -151,9 +164,10 @@ tags=$(git -C "$repo" tag -l)
 out=$(FAKE_NEXT=v0.7.0 release --dry-run) || fail "preview: $out"
 grep -q 'v0.6.0 has no published GitHub release' <<<"$out" || fail "preview missed v0.6.0: $out"
 grep -q 'Next release: v0.7.0' <<<"$out" || fail "preview missed v0.7.0: $out"
+grep -q 'Notes for v0.6.0..HEAD' <<<"$out" || fail "preview notes do not start at v0.6.0: $out"
 out=$(FAKE_GH_DOWN=1 FAKE_NEXT=v0.7.0 release --dry-run) || fail "preview without GitHub: $out"
 grep -q 'Could not check the GitHub release for v0.6.0' <<<"$out" || fail "preview hid the GitHub failure: $out"
-# A preview whose notes fail still removes the tag it created.
+# A preview whose notes fail leaves no tag behind either.
 FAKE_CHANGELOG_FAIL=1 FAKE_NEXT=v0.7.0 release --dry-run >/dev/null && fail "a failed changelog was ignored"
 [[ $(git -C "$repo" tag -l) == "$tags" ]] || fail "a preview left tags behind"
 [[ ! -d $root/gh/v0.6.0 && ! -d $root/gh/v0.7.0 ]] || fail "a preview published a release"
@@ -162,4 +176,4 @@ FAKE_CHANGELOG_FAIL=1 FAKE_NEXT=v0.7.0 release --dry-run >/dev/null && fail "a f
 FAKE_GH_DOWN=1 FAKE_NEXT=v0.7.0 release >/dev/null && fail "a release ran without GitHub"
 [[ $(git -C "$repo" tag -l) == "$tags" ]] || fail "a release went ahead past an unfinished tag"
 
-printf '%s\n' 'Release checks passed: unreleased tag, published tag, draft, formula retry, finish then release, preview.'
+printf '%s\n' 'Release checks passed: first preview, unreleased tag, published tag, draft, formula retry, finish then release, preview.'

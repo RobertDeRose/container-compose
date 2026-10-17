@@ -21,9 +21,7 @@ dry_run=false
 cog() { mise exec -- cog "$@"; }
 
 work=$(mktemp -d)
-preview_tag=
 cleanup() {
-    [[ -n $preview_tag ]] && git tag -d "$preview_tag" >/dev/null 2>&1
     git worktree remove --force "$work/build" >/dev/null 2>&1 || true
     rm -rf -- "$work"
     return 0
@@ -45,9 +43,10 @@ release_state() {
     fi
 }
 
-# Writes the release notes for an existing tag.
+# Writes the release notes for the commits cog changelog selects: `--at <tag>`
+# for an existing tag, a range, or nothing for the whole history.
 write_notes() {
-    cog changelog --at "$1" --template .config/cog-release-notes.tera | sed '/./,$!d' >"$work/notes"
+    cog changelog "$@" --template .config/cog-release-notes.tera | sed '/./,$!d' >"$work/notes"
 }
 
 # Publishes the GitHub release for a pushed tag from the archives in a folder.
@@ -80,7 +79,7 @@ finish_tag() {
         echo "Finishing $tag: publishing its GitHub release"
         git worktree add -q --detach "$work/build" "$tag"
         (cd "$work/build" && ./scripts/set-version.sh "${tag#v}" >/dev/null && make package VERSION="${tag#v}")
-        write_notes "$tag"
+        write_notes --at "$tag"
         publish_release "$tag" "$work/build/dist"
         git worktree remove --force "$work/build"
     fi
@@ -122,11 +121,14 @@ if [[ ! $next =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 version=${next#v}
 
-# The notes need the tag, so it is created locally first; a preview removes
-# it again on any exit, including a failed changelog or an interrupt.
-git tag "$next"
-$dry_run && preview_tag=$next
-write_notes "$next"
+# The notes cover the commits since the latest tag, or every commit before the
+# first release; the template leaves the version to the release title. So no
+# tag is needed until the release pushes one, and a preview creates none.
+if [[ -n $latest ]]; then
+    write_notes "$latest..HEAD"
+else
+    write_notes
+fi
 
 if $dry_run; then
     echo "Next release: $next"
@@ -137,6 +139,7 @@ fi
 
 ./scripts/set-version.sh "$version" >/dev/null
 make package VERSION="$version"
+git tag "$next"
 # The tag is pushed with the given token so that, as the release app, it
 # starts the machine image workflow for this version.
 git push -q "$remote" "refs/tags/$next"
