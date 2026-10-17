@@ -18,13 +18,13 @@ INTERVAL_SECONDS=${COMPOSE_IDLE_SHUTDOWN_INTERVAL_SECONDS:-60}
 RUN_ONCE=${COMPOSE_IDLE_SHUTDOWN_RUN_ONCE:-0}
 
 case "$IDLE_SECONDS" in
-    ''|*[!0-9]*)
+    '' | *[!0-9]*)
         echo "invalid Compose idle shutdown timeout: $IDLE_SECONDS" >&2
         exit 1
         ;;
 esac
 case "$INTERVAL_SECONDS" in
-    ''|*[!0-9]*)
+    '' | *[!0-9]*)
         echo "invalid Compose idle shutdown check interval: $INTERVAL_SECONDS" >&2
         exit 1
         ;;
