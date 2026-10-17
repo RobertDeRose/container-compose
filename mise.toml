@@ -1,0 +1,12 @@
+# Development tools for this repository. Run `mise install` once.
+#
+# Swift is deliberately not pinned: the plugin builds against Apple's
+# frameworks with the Swift 6.2+ toolchain from Xcode, the same toolchain CI
+# uses. A mise-installed Swift would shadow it.
+[tools]
+# Release tooling only (semantic-release in package.json), matching CI's lts/*.
+node = "lts"
+
+[tasks.site]
+description = "Preview the product site at http://localhost:8000 (set PORT to change it)"
+run = 'python3 -m http.server "${PORT:-8000}" --directory site'
