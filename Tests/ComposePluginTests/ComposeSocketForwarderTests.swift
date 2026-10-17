@@ -195,6 +195,7 @@ struct ComposeSocketForwarderTests {
         #expect(await ComposeGuestBridge.completes(Task {}, within: .seconds(5)))
     }
 
+    /// Verifies that the pump copies the complete payload and reports source EOF.
     @Test
     func pumpCopiesUntilEndOfInput() throws {
         var source: [Int32] = [0, 0]
@@ -218,6 +219,7 @@ struct ComposeSocketForwarderTests {
         #expect(Array(received.prefix(payload.count)) == payload)
     }
 
+    /// Verifies that a read-only destination makes the pump report a write failure.
     @Test
     func pumpReportsAFailedWrite() throws {
         var source: [Int32] = [0, 0]
@@ -239,6 +241,7 @@ struct ComposeSocketForwarderTests {
         #expect(ComposeGuestBridge.pump(from: source[0], to: destination) == .writeFailed)
     }
 
+    /// Verifies that the retained pipe end can send bytes to the transferred read end.
     @Test
     func relayPipeKeepsTheEndThatWasNotTransferred() throws {
         let input = try ComposeRelayPipe()
