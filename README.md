@@ -92,8 +92,23 @@ The wrapper also restores registration on the next `compose` invocation after
 ### container from mise
 
 mise installs `container` into a versioned directory of its own, so the
-plugin goes there too, with no elevated privileges. Let mise keep both wired
-together by giving each tool a `postinstall` step:
+plugin goes there too, with no elevated privileges:
+
+```bash
+mise use -g container 'github:RobertDeRose/container-compose-plugin[bin_path=cli,strip_components=1]'
+container system start
+compose --help
+```
+
+The `bin_path` and `strip_components` options put the release archive's
+`cli/compose` wrapper on your `PATH`, rather than the native plugin executable.
+With mise activated in your shell, `compose` forwards to the selected mise
+`container`, registering the plugin on first use and again whenever either
+tool changes version. For example, `compose up -d` is the same as
+`container compose up -d`.
+
+To keep `container compose` registered after `mise upgrade` without running
+`compose` first, give each tool a `postinstall` step in your mise config:
 
 ```toml
 # ~/.config/mise/config.toml
@@ -114,21 +129,6 @@ bin_path = "cli"
 postinstall = """
 "$MISE_TOOL_INSTALL_PATH/install.sh" --replace --prefix "$(mise where container)/Payload"
 """
-```
-
-Then `mise install`. The plugin's step installs it into the current
-`container`; the `container` step reinstalls the plugin into a newly upgraded
-`container`, and does nothing when the plugin is not installed. Upgrading
-either tool with `mise upgrade` keeps them matched.
-
-With mise activated in your shell, this also provides the shorter `compose`
-command. It forwards to the selected mise `container` and restores registration
-on first use if needed. For example:
-
-```bash
-mise install
-container system start
-compose --help
 ```
 
 ### container from Apple's installer
@@ -466,6 +466,17 @@ CI runs `make test` on macOS and Linux. Linux builds only the portable
 `ComposeSupport` target and its tests; the executable and Apple client
 libraries require macOS. Local builds are ad-hoc signed; set
 `CODE_SIGN_IDENTITY` to sign with a certificate.
+
+Swift comes from Xcode. Node.js is needed only for the release tooling in
+`package.json`; `mise install` provides the LTS release CI uses, as pinned in
+`mise.toml`.
+
+### Website
+
+`site/` holds the project's product page: static HTML, CSS, and JavaScript
+with no build step. The `Pages` workflow publishes it to GitHub Pages on pushes
+to `main` that change `site/`. Preview it locally with `mise run site`, which
+serves it at `http://localhost:8000`; set `PORT` to use another port.
 
 ### Releases
 
