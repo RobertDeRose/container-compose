@@ -56,12 +56,12 @@ README's install routes for what happens when `container` itself is upgraded.
 From a newer release archive, or from source:
 
 ```bash
-./compose/install.sh --replace
+./compose/install.sh
 ```
 
 ```bash
 git pull
-make install REPLACE=1
+make install
 ```
 
 Then replace the running forwarder:
