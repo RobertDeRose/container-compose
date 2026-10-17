@@ -15,14 +15,17 @@ project is built, tested, and reviewed so that your change lands smoothly.
 
 ## Development setup
 
-You need macOS 15 or newer, Swift 6.2 or newer, and a running `container`
-host. Linux can build and test only the portable `ComposeSupport` target.
+You need macOS 15 or newer, Swift 6.2 or newer, [mise](https://mise.jdx.dev/),
+and a running `container` host. Linux can build and test only the portable
+`ComposeSupport` target.
 
 ```bash
 container system start
+mise install    # pinned linters and tools; installs the Git hooks
 make build      # release build of the compose executable
 make test       # swift test plus scripts/test-install.sh
 make lint       # swift-format lint and shell syntax checks
+mise run check  # every linter over the whole repository (mise run fix applies fixes)
 make stage      # stage dist/staging/compose
 make install             # install your build, upgrading an existing one
 ```
@@ -103,6 +106,10 @@ pull request description.
 
 ## Code style
 
+- `mise run check` must pass; CI runs it too. It runs the linters configured
+  in `hk.pkl`: swift-format, ShellCheck, actionlint, rumdl, Tombi, typos, and
+  basic file hygiene checks. The pre-commit hook applies their fixes to staged
+  files, and the commit-msg hook checks the message with Cocogitto.
 - `make lint` must pass. Formatting follows the repository's `.swift-format`
   configuration: four-space indentation and a 180-column limit. Run
   `swift format --in-place --recursive Sources Tests` to apply it.
@@ -171,7 +178,7 @@ Before requesting review, confirm that:
 
 - The pull request addresses one issue or feature.
 - Commits follow the message conventions above.
-- `make test` and `make lint` pass locally and CI is green.
+- `make test`, `make lint`, and `mise run check` pass locally and CI is green.
 - Tests cover the change, and any required host validation is noted.
 - Documentation is updated and contains no transient state.
 - Any guest image change comes with an updated pinned digest.

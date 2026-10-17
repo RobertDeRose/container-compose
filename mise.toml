@@ -6,6 +6,31 @@
 [tools]
 # Release tooling only (semantic-release in package.json), matching CI's lts/*.
 node = "lts"
+# Checks commit messages, which decide each release.
+cocogitto = "7.0.0"
+# Linting, run by hk from Git hooks and CI; see hk.pkl.
+actionlint = "1.7.12"
+hk = "2.7.0"
+pkl = "0.32.1"
+rumdl = "0.2.79"
+shellcheck = "0.11.0"
+tombi = "1.8.5"
+typos = "1.51.1"
+
+[env]
+HK_MISE = 1
+
+[hooks]
+# Installs the Git hooks; a partial install (CI installing one tool) has no hk.
+postinstall = "if command -v hk >/dev/null 2>&1; then hk install --mise; fi"
+
+[tasks.check]
+description = "Run every linter over the whole repository"
+run = "hk check --all"
+
+[tasks.fix]
+description = "Apply the linters' fixes over the whole repository"
+run = "hk fix --all"
 
 [tasks.site]
 description = "Preview the product site at http://localhost:8000 (set PORT to change it)"

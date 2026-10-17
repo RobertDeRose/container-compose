@@ -10,16 +10,5 @@ trim_trailing_whitespace = true
 indent_style = space
 indent_size = 4
 
-# shfmt reads its options from these sections; it does not expand braces.
-[*.sh]
-indent_style = space
-indent_size = 4
-switch_case_indent = true
-
-[machine-image/container-compose-idle-shutdown]
-indent_style = space
-indent_size = 4
-switch_case_indent = true
-
 [{Makefile,*.mk}]
 indent_style = tab
