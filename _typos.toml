@@ -1,0 +1,3 @@
+[default.extend-words]
+# The CSS font-variation-settings axis tag for width.
+wdth = "wdth"
