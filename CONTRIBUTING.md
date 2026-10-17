@@ -24,7 +24,7 @@ make build      # release build of the compose executable
 make test       # swift test plus scripts/test-install.sh
 make lint       # swift-format lint and shell syntax checks
 make stage      # stage dist/staging/compose
-make install REPLACE=1   # install your build over an existing one
+make install             # install your build, upgrading an existing one
 ```
 
 Validate against an unmodified host, ideally with an isolated `container` app

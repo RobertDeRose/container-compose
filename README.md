@@ -182,13 +182,13 @@ keep their installations registered as described above.
 
 ### Upgrade and uninstall
 
-Homebrew and mise upgrade the plugin like any other tool. The installer
-otherwise refuses to overwrite an existing plugin unless told to replace one
-that this project installed:
+Homebrew and mise upgrade the plugin like any other tool. Otherwise, install
+again: the installer upgrades this plugin's existing installation in place,
+and refuses to overwrite any other plugin at that path.
 
 ```bash
-./compose/install.sh --replace     # from a newer release archive
-make install REPLACE=1             # from source, after git pull
+./compose/install.sh               # from a newer release archive
+make install                       # from source, after git pull
 ```
 
 Upgrading replaces only the plugin files. The machine, its Docker data, and

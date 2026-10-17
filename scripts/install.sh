@@ -11,14 +11,15 @@ else
 fi
 stage=${COMPOSE_STAGING_DIR:-$default_stage}
 prefix=
-replace=false
 while (($#)); do
     case "$1" in
         --prefix)
             [[ $# -ge 2 && $2 == /* ]] || { echo '--prefix requires an absolute installation root.' >&2; exit 2; }
             prefix=${2%/}; [[ -n $prefix ]] || prefix=/
             shift 2 ;;
-        --replace) replace=true; shift ;;
+        # Replacing this plugin's own installation is the default; the flag
+        # stays accepted for callers written for earlier installers.
+        --replace) shift ;;
         *) echo "Unknown installer argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -46,8 +47,9 @@ run_privileged() {
     if [[ $needs_sudo == true ]]; then sudo "$@"; else "$@"; fi
 }
 if [[ -e $destination || -L $destination ]]; then
-    [[ $replace == true && -f "$destination/.container-compose-plugin" && ! -L $destination ]] || {
-        echo "Refusing to overwrite $destination; use --replace only for this plugin's existing installation." >&2
+    # Upgrade this plugin in place, but never replace another plugin or a symlink.
+    [[ -f "$destination/.container-compose-plugin" && ! -L $destination ]] || {
+        echo "Refusing to overwrite $destination: it is not this plugin's installation." >&2
         exit 1
     }
 fi
