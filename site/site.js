@@ -33,6 +33,30 @@
   show();
 })();
 
+// GitHub star count beside the header link, shown only once it is worth showing.
+(() => {
+  const MIN_STARS = 100;
+  const repo = 'RobertDeRose/container-compose-plugin';
+  const badge = document.querySelector('.gh-stars');
+  const show = (count) => {
+    if (!(count >= MIN_STARS)) return;
+    badge.querySelector('.gh-count').textContent = new Intl.NumberFormat('en', { notation: 'compact' }).format(count);
+    badge.hidden = false;
+  };
+  // Cache for the session: the unauthenticated API allows 60 requests an hour per visitor.
+  try {
+    const cached = sessionStorage.getItem('stars');
+    if (cached !== null) return show(Number(cached));
+  } catch {}
+  fetch(`https://api.github.com/repos/${repo}`)
+    .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+    .then(({ stargazers_count: count }) => {
+      try { sessionStorage.setItem('stars', count); } catch {}
+      show(count);
+    })
+    .catch(() => {});
+})();
+
 // Copy buttons copy the command next to them.
 document.addEventListener('click', async (event) => {
   const button = event.target.closest('.copy');

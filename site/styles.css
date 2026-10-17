@@ -117,7 +117,8 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .top nav { display: flex; gap: clamp(0.75rem, 2.5vw, 1.75rem); font-size: 0.95rem; }
 .top nav a { color: var(--hull); text-decoration: none; }
 .top nav a:hover { color: var(--ink); }
-.top nav .nav-gh { color: var(--ink); font-weight: 600; }
+.top nav .nav-gh { color: var(--ink); font-weight: 600; white-space: nowrap; }
+.gh-stars { color: var(--hull); font-weight: 500; font-variant-numeric: tabular-nums; }
 .top-inner nav { margin-left: auto; }
 
 /* Shows the theme a click switches to: a moon in light mode, a sun in dark. */
