@@ -380,9 +380,10 @@ compose up -d</code></pre>
 
       <div class="panel" role="tabpanel" id="p-arcane" aria-labelledby="t-arcane" tabindex="0">
         <h3 class="no-js">Arcane</h3>
-        <p><a href="https://getarcane.app">Arcane</a> manages containers, images, volumes, networks, and Compose projects, closest to the dashboard in Docker Desktop. It picks up existing projects in its projects folder. <a href="https://github.com/getarcaneapp/arcane">Source on GitHub</a>, BSD-3-Clause.</p>
-        <pre class="block"><button type="button" class="copy">Copy</button><code>mkdir -p ~/arcane/projects && cd ~/arcane
-printf 'ARCANE_ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" > .env</code></pre>
+        <p><a href="https://getarcane.app">Arcane</a> manages containers, images, volumes, networks, and Compose projects, closest to the dashboard in Docker Desktop. <a href="https://github.com/getarcaneapp/arcane">Source on GitHub</a>, BSD-3-Clause.</p>
+        <p>Arcane encrypts what it stores with a key of your own. This creates one, and leaves an existing key alone:</p>
+        <pre class="block"><button type="button" class="copy">Copy</button><code>mkdir -p ~/arcane && cd ~/arcane
+[ -f .env ] || { key=$(openssl rand -hex 32) && printf 'ARCANE_ENCRYPTION_KEY=%s\n' "$key" > .env; }</code></pre>
         <p>Save this as <code>~/arcane/compose.yaml</code>:</p>
         <pre class="block"><button type="button" class="copy">Copy</button><code>services:
   arcane:
@@ -392,18 +393,16 @@ printf 'ARCANE_ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)" > .env</code></pre
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - arcane-data:/app/data
-      - ${HOME}/arcane/projects:${HOME}/arcane/projects
     environment:
       APP_URL: http://localhost:3552
       ENCRYPTION_KEY: ${ARCANE_ENCRYPTION_KEY}
-      PROJECTS_DIRECTORY: ${HOME}/arcane/projects
       ANALYTICS_DISABLED: "true"   # Arcane sends usage analytics unless this is set
     cgroup: host
     restart: unless-stopped
 
 volumes:
   arcane-data:</code></pre>
-        <p>Run <code>compose up -d</code> in <code>~/arcane</code>, open <a href="http://localhost:3552">localhost:3552</a>, and sign in as <code>arcane</code> with password <code>arcane-admin</code>. Arcane asks you to change it.</p>
+        <p>Run <code>compose up -d</code> in <code>~/arcane</code>, open <a href="http://localhost:3552">localhost:3552</a>, and sign in as <code>arcane</code> with password <code>arcane-admin</code>. Arcane asks you to change it, and has no setting to skip signing in. Keep <code>~/arcane/.env</code> with any backup of Arcane’s data: its key decrypts the credentials Arcane stores. For a projects folder on your Mac, more users, or single sign-on, see <a href="https://getarcane.app/docs">Arcane’s docs</a>.</p>
       </div>
 
       <div class="panel" role="tabpanel" id="p-dockge" aria-labelledby="t-dockge" tabindex="0">
@@ -423,7 +422,7 @@ volumes:
     environment:
       DOCKGE_STACKS_DIR: ${HOME}/dockge/stacks
     restart: unless-stopped</code></pre>
-        <p>Run <code>compose up -d</code> in <code>~/dockge</code>, open <a href="http://localhost:5001">localhost:5001</a>, and create your admin account.</p>
+        <p>Run <code>compose up -d</code> in <code>~/dockge</code>, open <a href="http://localhost:5001">localhost:5001</a>, and create your admin account. Dockge is reachable only from this Mac, so if you’d rather not sign in, turn it off under Settings → Security → Disable Auth. For everything else, see <a href="https://github.com/louislam/dockge">Dockge’s README</a>.</p>
       </div>
 
       <div class="panel" role="tabpanel" id="p-other" aria-labelledby="t-other" tabindex="0">
