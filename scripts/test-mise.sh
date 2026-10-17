@@ -8,15 +8,15 @@ export MISE_COMPOSE_TEST_HOST="$root/host with spaces"
 mkdir -p "$plugin/cli" "$plugin/bin" "$root/bin" "$MISE_COMPOSE_TEST_HOST/Payload/bin"
 cp scripts/compose-mise.sh "$plugin/cli/compose"
 cp scripts/install.sh "$plugin/install.sh"
-printf '%s\n' 'fixture' > "$plugin/.container-compose-plugin"
-printf '%s\n' 'abstract = "fixture"' > "$plugin/config.toml"
-printf '%s\n' '#!/bin/sh' 'echo native-version-one' > "$plugin/bin/compose"
-cat > "$root/bin/mise" <<'EOF'
+printf '%s\n' 'fixture' >"$plugin/.container-compose-plugin"
+printf '%s\n' 'abstract = "fixture"' >"$plugin/config.toml"
+printf '%s\n' '#!/bin/sh' 'echo native-version-one' >"$plugin/bin/compose"
+cat >"$root/bin/mise" <<'EOF'
 #!/bin/sh
 [ "$1" = where ] && [ "$2" = container ] || exit 2
 printf '%s\n' "$MISE_COMPOSE_TEST_HOST"
 EOF
-cat > "$MISE_COMPOSE_TEST_HOST/Payload/bin/container" <<'EOF'
+cat >"$MISE_COMPOSE_TEST_HOST/Payload/bin/container" <<'EOF'
 #!/bin/sh
 [ "$CONTAINER_INSTALL_ROOT" = "$MISE_COMPOSE_TEST_HOST/Payload" ] || exit 3
 [ "$1" = compose ] || exit 4
@@ -38,12 +38,13 @@ touch "$destination/keep"
 "$plugin/cli/compose" --help >/dev/null
 [[ -f "$destination/keep" ]]
 if "$plugin/cli/compose" --fail; then
-    echo 'Wrapper lost the host exit status.' >&2; exit 1
+    echo 'Wrapper lost the host exit status.' >&2
+    exit 1
 else
     [[ $? == 17 ]]
 fi
 # Selecting a different plugin version replaces only our own installation.
-printf '%s\n' '#!/bin/sh' 'echo native-version-two' > "$plugin/bin/compose"
+printf '%s\n' '#!/bin/sh' 'echo native-version-two' >"$plugin/bin/compose"
 "$plugin/cli/compose" --help >/dev/null
 cmp "$plugin/bin/compose" "$destination/bin/compose"
 # A different selected host gets its own registration.
@@ -57,7 +58,8 @@ cp "$old_host/Payload/bin/container" "$MISE_COMPOSE_TEST_HOST/Payload/bin/contai
 rm "$destination/.container-compose-plugin"
 export MISE_COMPOSE_TEST_HOST=$old_host
 if "$plugin/cli/compose" --help >/dev/null 2>&1; then
-    echo 'Wrapper overwrote a foreign plugin.' >&2; exit 1
+    echo 'Wrapper overwrote a foreign plugin.' >&2
+    exit 1
 fi
 cmp "$plugin/bin/compose" "$destination/bin/compose"
 printf '%s\n' 'mise wrapper checks passed: first use, arguments, exit status, plugin/host changes, and foreign-plugin refusal.'

@@ -14,17 +14,26 @@ prefix=
 while (($#)); do
     case "$1" in
         --prefix)
-            [[ $# -ge 2 && $2 == /* ]] || { echo '--prefix requires an absolute installation root.' >&2; exit 2; }
-            prefix=${2%/}; [[ -n $prefix ]] || prefix=/
-            shift 2 ;;
+            [[ $# -ge 2 && $2 == /* ]] || {
+                echo '--prefix requires an absolute installation root.' >&2
+                exit 2
+            }
+            prefix=${2%/}
+            [[ -n $prefix ]] || prefix=/
+            shift 2
+            ;;
         # Replacing this plugin's own installation is the default; the flag
         # stays accepted for callers written for earlier installers.
         --replace) shift ;;
-        *) echo "Unknown installer argument: $1" >&2; exit 2 ;;
+        *)
+            echo "Unknown installer argument: $1" >&2
+            exit 2
+            ;;
     esac
 done
 [[ -x "$stage/bin/compose" && -f "$stage/.container-compose-plugin" && -r "$stage/config.toml" ]] || {
-    echo 'Staged plugin is missing. Run make stage first, as your normal user, or run the installer from an extracted release archive.' >&2; exit 1;
+    echo 'Staged plugin is missing. Run make stage first, as your normal user, or run the installer from an extracted release archive.' >&2
+    exit 1
 }
 if [[ -n $prefix ]]; then
     destination="${prefix%/}/libexec/container-plugins/compose"
@@ -33,14 +42,18 @@ else
     destination=$("$stage/bin/compose" --install-path)
 fi
 [[ $destination == /*/libexec/container-plugins/compose ]] || {
-    echo "Invalid plugin destination: $destination" >&2; exit 1;
+    echo "Invalid plugin destination: $destination" >&2
+    exit 1
 }
 parent=${destination%/compose}
 # Parents the installer creates get traversable modes regardless of the
 # umask; existing directories keep theirs.
 created_parents=()
 ancestor=$parent
-while [[ ! -e $ancestor ]]; do created_parents+=("$ancestor"); ancestor=$(dirname "$ancestor"); done
+while [[ ! -e $ancestor ]]; do
+    created_parents+=("$ancestor")
+    ancestor=$(dirname "$ancestor")
+done
 needs_sudo=false
 if [[ ! -w $ancestor ]]; then needs_sudo=true; fi
 run_privileged() {
@@ -54,7 +67,10 @@ if [[ -e $destination || -L $destination ]]; then
     }
 fi
 run_privileged mkdir -p "$parent"
-[[ ! -L $parent ]] || { echo 'Refusing a symlinked plugin parent directory.' >&2; exit 1; }
+[[ ! -L $parent ]] || {
+    echo 'Refusing a symlinked plugin parent directory.' >&2
+    exit 1
+}
 if ((${#created_parents[@]})); then run_privileged chmod 0755 "${created_parents[@]}"; fi
 temporary=$(run_privileged mktemp -d "$parent/.compose-install.XXXXXX")
 backup=
