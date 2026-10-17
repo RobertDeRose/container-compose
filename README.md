@@ -489,8 +489,10 @@ Every push to `main` runs the release workflow, which runs
 `scripts/release.sh`. [Cocogitto](https://docs.cocogitto.io/) derives the next
 version from the Conventional Commits since the last tag (configured in
 `cog.toml`): `fix`, `perf`, and `revert` release a patch, `feat` a minor, and a
-breaking change a major, or a minor while the version is below 1.0. Other
-commit types do not release. The script stamps the version into the executable
+breaking change a major. Below 1.0 the breaking marker changes nothing:
+`feat!` releases a minor, `fix!` a patch, and a breaking change of a type that
+does not release, such as `refactor!`, releases nothing. Other commit types do
+not release. The script stamps the version into the executable
 with `scripts/set-version.sh`, builds and packages it on macOS, tags
 `v<version>`, and publishes a GitHub release with the archive, its checksum,
 and notes generated from the commits. Nothing is committed; the checked-in
