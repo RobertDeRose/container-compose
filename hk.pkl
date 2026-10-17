@@ -20,6 +20,7 @@ local linters = new Mapping<String, Step> {
   ["pkl_format"] = Builtins.pkl_format
   ["rumdl"] = Builtins.rumdl
   ["shellcheck"] = Builtins.shellcheck
+  ["shfmt"] = Builtins.shfmt
   // Swift comes from Xcode, as for the build; the rules are in .swift-format.
   // Like `make lint`, warnings are reported without failing the check.
   ["swift_format"] = new Step {
