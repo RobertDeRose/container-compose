@@ -195,6 +195,7 @@ struct ComposeSocketForwarderTests {
         #expect(await ComposeGuestBridge.completes(Task {}, within: .seconds(5)))
     }
 
+    /// Verifies that the pump copies the complete payload and reports source EOF.
     @Test
     func pumpCopiesUntilEndOfInput() throws {
         var source: [Int32] = [0, 0]
@@ -218,26 +219,29 @@ struct ComposeSocketForwarderTests {
         #expect(Array(received.prefix(payload.count)) == payload)
     }
 
+    /// Verifies that a read-only destination makes the pump report a write failure.
     @Test
-    func pumpReportsAClosedDestination() throws {
-        signal(SIGPIPE, SIG_IGN)
+    func pumpReportsAFailedWrite() throws {
         var source: [Int32] = [0, 0]
-        var destination: [Int32] = [0, 0]
         #expect(pipe(&source) == 0)
         closeOnExec(source)
-        #expect(pipe(&destination) == 0)
-        closeOnExec(destination)
+        // A pipe whose read end is closed is not a reliable failure: a child
+        // another test spawns before closeOnExec runs can inherit that read
+        // end and keep the write succeeding. A read-only descriptor, opened
+        // close-on-exec atomically, refuses every write.
+        let destination = open("/dev/null", O_RDONLY | O_CLOEXEC)
+        try #require(destination >= 0)
         defer {
             close(source[0])
-            close(destination[1])
+            close(destination)
         }
-        close(destination[0])
         #expect(write(source[1], "x", 1) == 1)
         close(source[1])
 
-        #expect(ComposeGuestBridge.pump(from: source[0], to: destination[1]) == .writeFailed)
+        #expect(ComposeGuestBridge.pump(from: source[0], to: destination) == .writeFailed)
     }
 
+    /// Verifies that the retained pipe end can send bytes to the transferred read end.
     @Test
     func relayPipeKeepsTheEndThatWasNotTransferred() throws {
         let input = try ComposeRelayPipe()
