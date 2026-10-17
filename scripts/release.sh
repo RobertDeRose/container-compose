@@ -14,14 +14,18 @@ dry_run=false
 
 cog() { mise exec -- cog "$@"; }
 
-# Cocogitto needs a clean tree and prints a message instead of a version when
-# nothing calls for a release, so only a version-shaped answer proceeds.
-next=$(cog bump --auto --dry-run 2>&1 | tail -n 1) || {
-    echo "$next" >&2
+# A release needs a clean checkout; a preview tolerates untracked files.
+# Cocogitto prints a message instead of a version when nothing calls for a
+# release, so only a version-shaped answer proceeds.
+bump=(bump --auto --dry-run)
+$dry_run && bump+=(--skip-untracked)
+if ! answer=$(cog "${bump[@]}" 2>&1); then
+    echo "$answer" >&2
     exit 1
-}
+fi
+next=$(grep -v '^[[:space:]]*$' <<<"$answer" | tail -n 1)
 if [[ ! $next =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "No release: $next"
+    echo "No release: $answer"
     exit 0
 fi
 version=${next#v}
@@ -29,7 +33,7 @@ version=${next#v}
 notes=$(mktemp)
 trap 'rm -f "$notes"' EXIT
 git tag "$next"
-cog changelog --at "$next" --template .config/cog-release-notes.tera >"$notes"
+cog changelog --at "$next" --template .config/cog-release-notes.tera | sed '/./,$!d' >"$notes"
 
 if $dry_run; then
     git tag -d "$next" >/dev/null
