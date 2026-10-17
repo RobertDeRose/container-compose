@@ -13,14 +13,19 @@ prefix="$root/prefix with spaces"
 ./scripts/install.sh --prefix "$prefix" >/dev/null
 destination="$prefix/libexec/container-plugins/compose"
 [[ -x "$destination/bin/compose" ]]
-if ./scripts/install.sh --prefix "$prefix" >/dev/null 2>&1; then
-    echo 'Installer overwrote a plugin without --replace.' >&2; exit 1
-fi
+# Installing over this plugin's own installation upgrades it in place.
 printf '%s\n' 'new-version' > "$COMPOSE_STAGING_DIR/resources/version"
-./scripts/install.sh --prefix "$prefix" --replace >/dev/null
+./scripts/install.sh --prefix "$prefix" >/dev/null
 [[ $(cat "$destination/resources/version") == new-version ]]
+# --replace is still accepted from callers written for earlier installers.
+printf '%s\n' 'newer-version' > "$COMPOSE_STAGING_DIR/resources/version"
+./scripts/install.sh --prefix "$prefix" --replace >/dev/null
+[[ $(cat "$destination/resources/version") == newer-version ]]
 rm "$destination/.container-compose-plugin"
 if ./scripts/install.sh --prefix "$prefix" --replace >/dev/null 2>&1; then
+    echo 'Installer overwrote a foreign plugin.' >&2; exit 1
+fi
+if ./scripts/install.sh --prefix "$prefix" >/dev/null 2>&1; then
     echo 'Installer overwrote a foreign plugin.' >&2; exit 1
 fi
 if ./scripts/install.sh --prefix relative >/dev/null 2>&1; then

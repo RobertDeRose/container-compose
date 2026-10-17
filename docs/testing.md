@@ -58,9 +58,9 @@ executable and the Apple client libraries require macOS.
   commands so every branch is deterministic.
 
 `scripts/test-install.sh` installs a fixture plugin into a temporary prefix
-and checks spaces in paths, refusal to overwrite without `--replace`, refusal
-to replace a foreign plugin, prefix validation, and directory modes under a
-restrictive umask.
+and checks spaces in paths, in-place upgrades with and without the legacy
+`--replace` flag, refusal to replace a foreign plugin, prefix validation, and
+directory modes under a restrictive umask.
 
 Timing-sensitive tests inject fixtures and use short, bounded waits. Do not
 add tests that depend on wall-clock sleeps to pass.

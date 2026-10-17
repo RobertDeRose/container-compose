@@ -1,7 +1,6 @@
 SWIFT ?= swift
 BUILD_CONFIGURATION ?= release
 PREFIX ?=
-REPLACE ?=
 VERSION ?=
 export BUILD_CONFIGURATION VERSION
 
@@ -19,7 +18,7 @@ stage: build
 	./scripts/stage.sh
 
 install: stage
-	./scripts/install.sh $(if $(PREFIX),--prefix "$(PREFIX)",) $(if $(REPLACE),--replace,)
+	./scripts/install.sh $(if $(PREFIX),--prefix "$(PREFIX)",)
 
 package: stage
 	./scripts/package.sh
