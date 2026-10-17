@@ -467,12 +467,16 @@ CI runs `make test` on macOS and Linux. Linux builds only the portable
 libraries require macOS. Local builds are ad-hoc signed; set
 `CODE_SIGN_IDENTITY` to sign with a certificate.
 
+Swift comes from Xcode. Node.js is needed only for the release tooling in
+`package.json`; `mise install` provides the LTS release CI uses, as pinned in
+`mise.toml`.
+
 ### Website
 
 `site/` holds the project's product page: static HTML, CSS, and JavaScript
 with no build step. The `Pages` workflow publishes it to GitHub Pages on pushes
-to `main` that change `site/`. Preview it locally with
-`python3 -m http.server --directory site`.
+to `main` that change `site/`. Preview it locally with `mise run site`, which
+serves it at `http://localhost:8000`; set `PORT` to use another port.
 
 ### Releases
 
